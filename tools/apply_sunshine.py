@@ -44,6 +44,8 @@ def make_changes(original):
                 "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::capture(std::move(mail), config, channel_data); return; }\n")
             text=at_entry(text,"  int probe_encoders()", "    if (rkmoon_sunshine::enabled()) { return rkmoon_sunshine::probe(); }\n")
         elif path=="src/input.cpp":
+            text=at_entry(text,"  void print(void *payload)",
+                "    if (rkmoon_sunshine::enabled()) { return; } // Never log decoded input, even at verbose.\n")
             text=at_entry(text,"  inline int apply_shortcut(short keyCode)","    if (rkmoon_sunshine::enabled()) { return 0; } // Send shortcuts to the USB host, not T6.\n")
         elif path=="src/platform/virtualhid_input.cpp":
             text=at_entry(text,"  std::unique_ptr<lvh::Runtime> create_runtime(lvh::BackendKind backend)",
@@ -72,6 +74,12 @@ def make_changes(original):
             text=once(text,"  bool pin(std::string_view pairing_id, std::string pin, std::string name);",
                 "  bool pin(std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop = {});")
         elif path=="src/nvhttp.cpp":
+            text=at_entry(text,"  void print_req(std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request)",
+                '    if (rkmoon_sunshine::enabled()) { BOOST_LOG(debug) << "RKMoon GameStream request (content redacted)"; return; }\n')
+            text=once(text,'    BOOST_LOG(debug) << sess.client.cert;',
+                '    BOOST_LOG(debug) << "RKMoon pairing certificate received (redacted)";')
+            text=once(text,'        BOOST_LOG(debug) << subject_name << " -- "sv << (verified ? "verified"sv : "denied"sv);',
+                '        BOOST_LOG(debug) << "Client certificate " << (verified ? "verified"sv : "denied"sv);')
             text=once(text,"  bool pin(const std::string_view pairing_id, std::string pin, std::string name) {",
                 "  bool pin(const std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop) {")
             text=once(text,"completion_deadline = std::min(sess.async_insert_pin.expires_at, now + config::stream.ping_timeout);",
@@ -90,7 +98,19 @@ def make_changes(original):
             })) return *completion->result;
       }
 """)
+        elif path=="src/stream.cpp":
+            text=once(text,'        << util::hex_vec(payload) << std::endl',
+                '        << "[RKMoon control payload redacted]" << std::endl')
+            for kind in ('ping [v2]', 'ping [v1]', 'non-ping'):
+                old='        BOOST_LOG(debug) << "Received '+kind+' from "sv << recv_peer.address() << \':\' << recv_peer.port() << " ["sv << util::hex_vec(msg) << \']\';'
+                new='        BOOST_LOG(debug) << "Received '+kind+' (payload redacted)";'
+                text=once(text,old,new)
         elif path=="src/rtsp.cpp":
+            # Keep sizes/status but never log SDP/options/raw request or response.
+            text=at_entry(text,"  void print_msg(PRTSP_MESSAGE msg)",
+                '    if (rkmoon_sunshine::enabled()) { BOOST_LOG(debug) << "RKMoon RTSP message (content redacted)"; return; }\n')
+            text=once(text,'          BOOST_LOG(debug) << "Found Host: "sv << content;',
+                '          BOOST_LOG(debug) << "Found RTSP Host header (redacted)";')
             anchor="    auto stream_session = stream::session::alloc(config, session);\n"
             text=once(text,anchor,"""    // RKMoon admission occurs AFTER upstream parsing/encryption validation and BEFORE input allocation.
     if (rkmoon_sunshine::enabled()) {
@@ -160,7 +180,7 @@ set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()

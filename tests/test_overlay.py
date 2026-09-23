@@ -55,7 +55,7 @@ class OverlayTests(unittest.TestCase):
             self.assertIn('stop.stop_requested()',changed)
             self.assertIn('std::chrono::seconds(30)',changed)
     def test_rtsp_admission_precedes_allocation(self):
-        s='// local includes\n    auto stream_session = stream::session::alloc(config, session);\n'
+        s='// local includes\n  void print_msg(PRTSP_MESSAGE msg) {\n}\n          BOOST_LOG(debug) << "Found Host: "sv << content;\n    auto stream_session = stream::session::alloc(config, session);\n'
         r=m.make_changes({'src/rtsp.cpp':s})['src/rtsp.cpp']
         self.assertLess(r.index('session_count()'),r.index('stream::session::alloc'))
         self.assertIn('453',r)
