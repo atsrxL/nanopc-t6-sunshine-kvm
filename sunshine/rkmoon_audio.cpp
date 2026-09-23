@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Dedicated HDMI ALSA -> stereo Opus capture. Never open an implicit/default microphone.
 #include "rkmoon_bridge.hpp"
+#include "rkmoon_audio_pcm.hpp"
 #include "src/config.h"
 #include "src/globals.h"
 #include "src/logging.h"
 #include "src/platform/common.h"
-#include <alsa/asoundlib.h>
 #include <opus/opus.h>
 #include <algorithm>
 #include <array>
@@ -19,45 +19,9 @@
 namespace rkmoon_sunshine {
 namespace {
 using namespace std::chrono_literals;
-struct PcmDeleter { void operator()(snd_pcm_t *p) const { if (p) snd_pcm_close(p); } };
-using Pcm = std::unique_ptr<snd_pcm_t, PcmDeleter>;
+using audio_io::Pcm;
 struct OpusDeleter { void operator()(OpusEncoder *p) const { if (p) opus_encoder_destroy(p); } };
 using Encoder = std::unique_ptr<OpusEncoder, OpusDeleter>;
-
-Pcm open_pcm(const char *device) {
-  snd_pcm_t *raw = nullptr;
-  int rc = snd_pcm_open(&raw, device, SND_PCM_STREAM_CAPTURE, SND_PCM_NONBLOCK);
-  if (rc < 0) return {};
-  Pcm pcm(raw);
-  snd_pcm_hw_params_t *hw;
-  snd_pcm_hw_params_alloca(&hw);
-  unsigned int rate = 48000;
-  snd_pcm_uframes_t period = 480;
-  int direction = 0;
-  // An explicit hw: request is native; an explicit plughw: request MAY convert
-  // device format/rate in ALSA. Both yield exactly 48k stereo to our encoder.
-  if ((rc = snd_pcm_hw_params_any(pcm.get(), hw)) < 0 ||
-      (rc = snd_pcm_hw_params_set_access(pcm.get(), hw, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0 ||
-      (rc = snd_pcm_hw_params_set_format(pcm.get(), hw, SND_PCM_FORMAT_S16_LE)) < 0 ||
-      (rc = snd_pcm_hw_params_set_channels(pcm.get(), hw, 2)) < 0 ||
-      (rc = snd_pcm_hw_params_set_rate(pcm.get(), hw, rate, 0)) < 0 ||
-      (rc = snd_pcm_hw_params_set_period_size_near(pcm.get(), hw, &period, &direction)) < 0) return {};
-  // Limit the driver-side backlog explicitly. Typical target 30ms; tolerate
-  // devices with a larger native period only up to 100ms, then refuse capture.
-  snd_pcm_uframes_t buffer = std::max<snd_pcm_uframes_t>(period * 3, 1440);
-  if (buffer > 4800 || snd_pcm_hw_params_set_buffer_size_near(pcm.get(), hw, &buffer) < 0 ||
-      buffer > 4800 || snd_pcm_hw_params(pcm.get(), hw) < 0) return {};
-  unsigned int actual_rate = 0, actual_channels = 0;
-  snd_pcm_format_t actual_format = SND_PCM_FORMAT_UNKNOWN;
-  snd_pcm_uframes_t actual_buffer = 0;
-  if (snd_pcm_hw_params_get_rate(hw, &actual_rate, nullptr) < 0 ||
-      snd_pcm_hw_params_get_buffer_size(hw, &actual_buffer) < 0 || actual_buffer > 4800 ||
-      snd_pcm_hw_params_get_channels(hw, &actual_channels) < 0 ||
-      snd_pcm_hw_params_get_format(hw, &actual_format) < 0 ||
-      actual_rate != 48000 || actual_channels != 2 || actual_format != SND_PCM_FORMAT_S16_LE) return {};
-  if (snd_pcm_prepare(pcm.get()) < 0) return {};
-  return pcm;
-}
 } // namespace
 
 void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data) {
@@ -90,6 +54,7 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
   std::vector<int16_t> pcm_samples(size_t(frames) * 2);
   std::vector<opus_int16> encoded_samples(pcm_samples.size());
   Pcm pcm;
+  snd_pcm_uframes_t capture_period = 0;
   auto retry_at = std::chrono::steady_clock::now();
   auto next_packet = retry_at;
   uint64_t recovered = 0, silent = 0, stale = 0, xruns = 0;
@@ -97,11 +62,12 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
   while (!shutdown->peek()) {
     auto now = std::chrono::steady_clock::now();
     if (!pcm && now >= retry_at) {
-      pcm = open_pcm(device);
+      pcm = audio_io::open_pcm(device, frames, capture_period);
       retry_at = now + 2s;
       if (pcm) {
         ++recovered;
-        BOOST_LOG(info) << "RKMoon 48k stereo HDMI capture ready (open count " << recovered << ", bitrate " << bitrate << ")";
+        BOOST_LOG(info) << "RKMoon 48k stereo HDMI capture ready (open count " << recovered
+                        << ", bitrate " << bitrate << ", period_frames " << capture_period << ")";
       } else if (recovered == 0) {
         BOOST_LOG(warning) << "RKMoon HDMI audio unavailable; sending initial silence; video/input continue";
       }
@@ -119,7 +85,9 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
       // recovery. Discard the capture ring, never replay stale sound as new.
       auto available = snd_pcm_avail_update(pcm.get());
       if (available == -EPIPE) ++xruns;
-      if (available > frames * 2) {
+      // A hardware capture period can exceed a 5ms Opus packet. Allow one
+      // native period plus a packet, but never carry several periods of lag.
+      if (available > std::max<snd_pcm_sframes_t>(frames * 2, capture_period + frames)) {
         ++stale;
         cleared_stale = snd_pcm_drop(pcm.get()) >= 0 && snd_pcm_prepare(pcm.get()) >= 0;
         if (!cleared_stale) pcm.reset();
@@ -129,7 +97,8 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
         valid = false;
       }
       int received = 0;
-      auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config.packetDuration + 5);
+      auto read_budget_ms = std::max(config.packetDuration, int((capture_period + 47) / 48)) + 5;
+      auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(read_budget_ms);
       while (valid && received < frames && !shutdown->peek() && std::chrono::steady_clock::now() < deadline) {
         auto n = snd_pcm_readi(pcm.get(), pcm_samples.data() + size_t(received) * 2, frames - received);
         if (n > 0) { received += int(n); continue; }
