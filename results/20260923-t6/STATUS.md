@@ -30,3 +30,11 @@ HEVC dequeue→AU 中位 9.503 ms、P95 11.570 ms、最大 33.320 ms；H264 中�
 原始视频/日志在 T6 `/home/at/rkmoon-20260923/`，Mac 私有证据在 `private/results/local/`。登录凭据、配对状态和视频不提交。测试窗口开始时旧三个服务已为 inactive（早先只读基线为 active），脚本按每次窗口入口状态恢复，不擅自启动已停服务。ACL 原始快照存放 T6 `/root/agent.backup/`。
 
 客户端 macOS / Apple M4、Moonlight 6.1.0。画面已实际观察；日志报告屏幕 50 Hz，不能据此宣称 60 Hz 显示呈现。HEVC 会话超过 10 分钟无日志中的解码错误，显式终止后 H264 能重新连接。无音频路径未阻止这个客户端连接，不代表所有客户端兼容。
+
+## 窗口结束与 P3 只读检查
+
+视频测试结束后已确认 Sunshine/worker 无残留进程；video0、mpp_service、DMA heap 临时 at 用户 ACL 已撤销。旧 t6-kvmd、t6-kvmd-vnc、t6-kvm-panel 保持窗口入口的 inactive 状态。
+
+P3 只读检查确认 `/etc/t6-kvm/main.yaml` 使用启用鉴权的 `/run/t6-kvm/kvmd.sock`；keyboard 为 `/dev/hidg0`，mouse 为 `/dev/hidg1` 且 `absolute: true`，mouse_alt 未配置。实际 configfs `hid.usb1` report_length=7，X/Y Input 标志为 Absolute，与配置一致。服务未运行，尚不能验证在线 API 鉴权与 HID 状态。未读取或公开密码文件，未发送 USB 事件，未修改 gadget。
+
+建议下一授权窗口：保存原配置、描述符和 UDC 绑定到 `/root/agent.backup/`；将现有鼠标改为匹配 kvmd 的相对模式并重建 gadget（目标电脑 USB 键鼠会短暂重连）；隔离其他输入源后测试 Moonlight 键鼠和异常释放；结束时恢复原绝对模式、绑定和窗口入口服务状态。实施前仍需核对现有 gadget 创建入口，并审阅具体配置差异。此方案尚未执行。
