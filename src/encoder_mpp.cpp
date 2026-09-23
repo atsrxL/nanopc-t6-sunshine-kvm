@@ -54,8 +54,9 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
     if(!p->direct){for(auto b:p->imported)mpp_buffer_put(b);p->imported.clear();}
   }
   if(!p->direct&&!allow_copy) throw std::runtime_error("DMA-BUF layout/export/import unavailable; explicitly authorize --allow-copy");
-  p->hs=p->direct?l.stride:align64(c.width);p->vs=p->direct?c.height:align64(c.height);
-  p->format=p->direct&&l.pixels==Pixels::bgr24?MPP_FMT_BGR888:MPP_FMT_YUV420SP;
+  p->hs=p->direct?l.stride:align64(c.width*(l.pixels==Pixels::bgr24?3:1));
+  p->vs=p->direct?c.height:align64(c.height);
+  p->format=l.pixels==Pixels::bgr24?MPP_FMT_BGR888:MPP_FMT_YUV420SP;
   auto codec=c.codec==Codec::hevc?MPP_VIDEO_CodingHEVC:MPP_VIDEO_CodingAVC;
   ok(mpp_check_support_format(MPP_CTX_ENC,codec),"check_support_format");
   ok(mpp_create(&p->ctx,&p->api),"create");ok(mpp_init(p->ctx,MPP_CTX_ENC,codec),"init");
@@ -63,8 +64,10 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
   p->s("codec:type",codec);p->s("base:low_delay",1);
   p->s("prep:width",int32_t(c.width));p->s("prep:height",int32_t(c.height));
   p->s("prep:hor_stride",int32_t(p->hs));p->s("prep:ver_stride",int32_t(p->vs));p->s("prep:format",p->format);
-  bool full_input=l.full_range||(p->direct&&l.pixels==Pixels::bgr24);
-  p->s("prep:range",full_input?MPP_FRAME_RANGE_JPEG:MPP_FRAME_RANGE_MPEG);
+  // VEPU580 treats RGB input as full range automatically. prep:range selects
+  // the RGB-to-YUV output matrix AND the H264/HEVC VUI; range_out is JPEG-only
+  // in this pinned SDK. Keep encoded range aligned with our frame metadata.
+  p->s("prep:range",l.full_range?MPP_FRAME_RANGE_JPEG:MPP_FRAME_RANGE_MPEG);
   p->s("prep:range_out",l.full_range?MPP_FRAME_RANGE_JPEG:MPP_FRAME_RANGE_MPEG);
   p->s("prep:colorspace",1);p->s("prep:colorprim",1);p->s("prep:colortrc",int32_t(l.transfer));
   p->s("rc:mode",MPP_ENC_RC_MODE_CBR);p->set_rate(c.bitrate);
@@ -93,7 +96,8 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
   ok(p->api->control(p->ctx,MPP_SET_OUTPUT_TIMEOUT,&wait),"nonblocking output");
   if(!p->direct){
     ok(mpp_buffer_group_get_internal(&p->group,MppBufferType(MPP_BUFFER_TYPE_DRM|MPP_BUFFER_FLAGS_CACHABLE),0),"buffer_group");
-    ok(mpp_buffer_get(p->group,&p->staging,size_t(p->hs)*p->vs*3/2),"staging buffer");
+    const size_t bytes=size_t(p->hs)*p->vs*(l.pixels==Pixels::bgr24?2:3)/2;
+    ok(mpp_buffer_get(p->group,&p->staging,bytes),"staging buffer");
   }
   std::cerr<<"{\"kind\":\"encoder\",\"codec\":\""<<(c.codec==Codec::hevc?"hevc":"h264")
     <<"\",\"hardware\":true,\"path\":\""<<(p->direct?"dmabuf-import":"explicit-cpu-pixel-copy")<<"\"}\n";
@@ -115,7 +119,20 @@ Message Encoder::encode(const Capture::Frame& raw,Capture::Buffer* capture,bool 
         bool sync=capture->dma.get()>=0;
         dma_buf_sync fence{DMA_BUF_SYNC_START|DMA_BUF_SYNC_READ};
         if(sync&&ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence)<0)throw std::runtime_error("capture DMA CPU sync failed");
-        try {to_nv12(p.source,static_cast<uint8_t*>(capture->data)+raw.offset,raw.bytes-raw.offset,dst,size_t(p.hs)*p.vs*3/2,p.hs,p.vs);}
+        try {
+          if(raw.bytes<raw.offset||raw.bytes-raw.offset<p.source.sizeimage)
+            throw std::runtime_error("short capture input");
+          const auto* src=static_cast<uint8_t*>(capture->data)+raw.offset;
+          if(p.source.pixels==Pixels::bgr24){
+            // Preserve BGR for MPP's hardware color conversion. Sequential
+            // copies avoid expensive repeated reads of uncached V4L2 MMAP.
+            std::memset(dst,0,size_t(p.hs)*p.vs);
+            for(uint32_t y=0;y<p.c.height;++y)
+              std::memcpy(dst+size_t(y)*p.hs,src+size_t(y)*p.source.stride,size_t(p.c.width)*3);
+          }else{
+            to_nv12(p.source,src,raw.bytes-raw.offset,dst,size_t(p.hs)*p.vs*3/2,p.hs,p.vs);
+          }
+        }
         catch(...){if(sync){fence.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_READ;ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence);}throw;}
         if(sync){fence.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_READ;if(ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence)<0)throw std::runtime_error("capture DMA CPU sync end failed");}
       } else { // Hardware encoder capability probe ONLY; never substituted into a live HDMI stream.

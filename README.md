@@ -1,5 +1,7 @@
 # RKMoon — RK3588 HDMI → 原版 Moonlight KVM
 
+> 实机更新：ARM64 worker/Sunshine 已构建；T6 真实 1080p60 HEVC/H264 各 60 秒及独立解码通过；Moonlight 已配对。客户端硬解长测和 USB 尚未完成。见 [T6 验收记录](results/20260923-t6/STATUS.md)。
+
 > 2026-09-23 本地更新：完整 Sunshine 与真实 MPP worker 已在 Linux amd64 编译链接通过；25 原生、69 Python/联合、25 sanitizer 测试通过。目标 ARM64/P1/P2/P3 仍未测试。最新结果见 [构建记录](results/20260923-build/STATUS.md)。下文原交接记录保留供追溯。
 
 **版本：0.1.0-dev / 2026-09-23 云端源码交付。状态：可接手工程，不是已完成实机验收的安装发行版。**

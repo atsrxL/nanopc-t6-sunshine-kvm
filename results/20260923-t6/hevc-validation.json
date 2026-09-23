@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "evidence_kind": "independent_bitstream_decode_and_csv_checks",
+  "hardware_acceptance": "NOT_ASSIGNED",
+  "physical_display_latency": "NOT_MEASURED",
+  "file_sha256": "236c45219c173521011d8f09118a18472618091bf258f8437860cafd5c77aaaa",
+  "checks": {
+    "codec": true,
+    "dimensions": true,
+    "eight_bit_420": true,
+    "profile": true,
+    "no_reported_b_frames": true,
+    "bt709_matrix": true,
+    "bt709_primaries": true,
+    "range_matches_source": true,
+    "transfer_matches_source": true,
+    "independent_complete_decode": true,
+    "csv_sequence_contiguous": true,
+    "stage_order": true,
+    "timestamps_monotonic": true,
+    "decoded_frame_count_matches_csv": true,
+    "required_duration": true,
+    "cadence_within_5_percent": true,
+    "first_frame_idr": true
+  },
+  "limitations": [
+    "CSV proves neither HDMI full capture delay nor network/client/USB behavior. Inspect source content, thermals, IDR control timing and Moonlight separately."
+  ],
+  "stream": {
+    "codec_name": "hevc",
+    "profile": "Main",
+    "width": 1920,
+    "height": 1080,
+    "has_b_frames": 0,
+    "pix_fmt": "yuv420p",
+    "level": 123,
+    "color_range": "tv",
+    "color_space": "bt709",
+    "color_transfer": "iec61966-2-1",
+    "color_primaries": "bt709",
+    "nb_read_frames": "3592"
+  },
+  "decoder_diagnostics": "",
+  "observed": {
+    "frames": 3592,
+    "dequeue_span_s": 59.884016,
+    "fps_from_dequeue_span": 59.9659181174489,
+    "average_payload_bitrate_bps": 2095793.1745926992,
+    "idr_sequences": [
+      1,
+      55,
+      175,
+      295,
+      415,
+      535,
+      655,
+      775,
+      895,
+      1015,
+      1135,
+      1255,
+      1375,
+      1495,
+      1615,
+      1735,
+      1855,
+      1975,
+      2095,
+      2215,
+      2335,
+      2455,
+      2575,
+      2695,
+      2815,
+      2935,
+      3055,
+      3175,
+      3295,
+      3415,
+      3535
+    ],
+    "raw_skipped": 2,
+    "paths": [
+      "cpu_pixel_copy"
+    ]
+  },
+  "latency_us": {
+    "dequeue_to_submit": {
+      "n": 3592,
+      "p50": 5476.0,
+      "p95": 7486.45,
+      "p99": 8151.260000000002,
+      "max": 29253
+    },
+    "submit_to_au": {
+      "n": 3592,
+      "p50": 3990.0,
+      "p95": 4174.45,
+      "p99": 4312.27,
+      "max": 8434
+    },
+    "dequeue_to_au": {
+      "n": 3592,
+      "p50": 9503.0,
+      "p95": 11569.9,
+      "p99": 12343.260000000002,
+      "max": 33320
+    }
+  },
+  "all_supplied_checks_passed": true
+}

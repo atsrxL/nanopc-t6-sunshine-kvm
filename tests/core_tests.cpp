@@ -3,6 +3,7 @@
 #include "rkmoon/core.hpp"
 #include <algorithm>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -18,6 +19,7 @@ Message au(Codec c=Codec::h264){Message m;m.bytes=c==Codec::hevc?hevc():avc();m.
 std::pair<Fd,Fd> sockets(){int s[2];must(socketpair(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0,s)==0);return {Fd(s[0]),Fd(s[1])};}
 int main(int argc,char** argv){try{
   if(argc>=4&&std::string(argv[1])=="--ipc-fd"){
+    must(fcntl(STDIN_FILENO,F_GETFD)>=0);
     Message m;m.h.kind=Kind::caps;m.h.extra=3;send(std::stoi(argv[2]),m,100ms);return 0;
   }
   if(argc==4&&std::string(argv[1])=="--annexb-file"){
@@ -50,7 +52,14 @@ int main(int argc,char** argv){try{
     {"ipc_roundtrip",[]{auto s=sockets();auto m=au();send(s.first.get(),m,100ms);auto got=receive(s.second.get(),100ms);must(got.bytes==m.bytes&&got.h.seq==1);}},
     {"ipc_eof",[]{auto s=sockets();s.first.reset();rejects([&]{receive(s.second.get(),100ms);});}},
     {"ipc_deadline",[]{auto s=sockets();auto begin=now_us();rejects([&]{receive(s.second.get(),20ms);});auto elapsed=now_us()-begin;must(elapsed>=15000&&elapsed<500000);}},
-    {"child_spawn",[&]{Child child(std::filesystem::absolute(argv[0]).string(),{"--test-child"});auto got=receive(child.fd(),2s);must(got.h.kind==Kind::caps&&got.h.extra==3);}}
+    {"child_spawn",[&]{
+      // Reproduce Sunshine's stdin disappearing on exec before MPP constructors.
+      Fd saved(dup(STDIN_FILENO));
+      if(saved.get()>=0)fcntl(STDIN_FILENO,F_SETFD,FD_CLOEXEC);
+      Child child(std::filesystem::absolute(argv[0]).string(),{"--test-child"});
+      if(saved.get()>=0)dup2(saved.get(),STDIN_FILENO);
+      auto got=receive(child.fd(),2s);must(got.h.kind==Kind::caps&&got.h.extra==3);
+    }}
   };
   if(argc!=2||!tests.count(argv[1])){std::cerr<<"unknown test\n";return 2;}
   tests.at(argv[1])();std::cout<<"PASS "<<argv[1]<<'\n';return 0;

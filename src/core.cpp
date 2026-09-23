@@ -92,7 +92,10 @@ Child::Child(const std::string& executable,const std::vector<std::string>& argum
   Fd out(fcntl(child.get(),F_DUPFD_CLOEXEC,10)); if(out.get()<0) fail("dup socket");
   posix_spawn_file_actions_t actions;
   if(posix_spawn_file_actions_init(&actions)) throw std::runtime_error("spawn actions init");
-  int e=posix_spawn_file_actions_adddup2(&actions,out.get(),3);
+  // Reserve stdin before dynamic-library constructors run. Sunshine can leave
+  // stdin CLOEXEC; pinned MPP incorrectly rejects a successfully opened fd 0.
+  int e=posix_spawn_file_actions_addopen(&actions,STDIN_FILENO,"/dev/null",O_RDONLY,0);
+  if(!e) e=posix_spawn_file_actions_adddup2(&actions,out.get(),3);
   if(!e) e=posix_spawn_file_actions_addclose(&actions,out.get());
   std::vector<std::string> args{executable,"--ipc-fd","3"}; args.insert(args.end(),arguments.begin(),arguments.end());
   std::vector<char*> argv; for(auto& a:args) argv.push_back(a.data()); argv.push_back(nullptr);
