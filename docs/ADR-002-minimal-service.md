@@ -12,4 +12,6 @@
 
 本阶段特意保留成熟 Sunshine 网络协议，因此定制客户端可先复用 GameStream；不强求继续与官方客户端兼容（变更时需双方协商）。输入只走原加密控制与隔离的 USB HID 租约，不给服务器 root/setcap。
 
+固定版本安全日志审查发现 upstream debug/verbose 可打印 HTTP query/header、配对clientcert/证书subject、RTSP payload/options/raw、未知control/ping原始字节与解密键码/Unicode。专用 overlay 对这些日志入口无条件做内容遮蔽（不依赖默认日志等级），保留请求/消息到达、认证通过/拒绝、错误类别及统计；没有改认证、解密、请求解析或协议状态转换。合成fixture分别覆盖HTTP/RTSP完整日志函数、control/ping实际日志语句和input入口guard；后者以synthetic sink替代下游typed printer，不冒称完整输入解密回归。真实日志和配对状态不进仓库。
+
 构建、模拟、真实 ALSA/HDMI 采集、端到端口型/画面同步与新客户端结果分别在验收表记录，不能以单项替代。继续审计剩余固定 Sunshine 编译依赖及许可，保留认证/权限清理；再裁剪 `process`/display/平台依赖须单独完成构建及安全回归。

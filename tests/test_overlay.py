@@ -42,10 +42,11 @@ class OverlayTests(unittest.TestCase):
         changed=m.make_changes({'cmake/compile_definitions/linux.cmake':fixture})['cmake/compile_definitions/linux.cmake']
         self.assertIn('if(NOT RKMOON_MINIMAL_BUILD AND NOT ${CUDA_FOUND}',changed)
     def test_no_desktop_platform_init(self):
-        fixture='// local includes\n  std::unique_ptr<deinit_t> init() {\noriginal();\n}\n'
+        fixture='// local includes\n  fs::path appdata() {\n}\n  std::unique_ptr<deinit_t> init() {\noriginal();\n}\n'
         changed=m.make_changes({'src/platform/linux/misc.cpp':fixture})['src/platform/linux/misc.cpp']
         self.assertLess(changed.index('rkmoon_sunshine::enabled()'),changed.index('original();'))
         self.assertIn('make_unique<deinit_t>()',changed)
+        self.assertIn('Never migrate an installed Sunshine state.',changed)
     def test_pairing_can_cancel_wait(self):
         source=(Path(__file__).resolve().parents[1]/'vendor/sunshine/src/nvhttp.cpp')
         # Fixture is the pinned source, not a fuzzy patch of an unknown version.

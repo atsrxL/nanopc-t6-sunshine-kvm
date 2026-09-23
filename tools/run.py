@@ -95,6 +95,8 @@ def base_env(c,state):
     # The Linux privileged environment sanitizer remains upstream; runtime must not require root/capabilities.
     e.update(RKMOON_WORKER=c['worker_binary'],RKMOON_VIDEO_DEVICE=c['capture_device'],RKMOON_CAPTURE_AUTHORIZED='1',
         RKMOON_ALLOW_COPY=str(int(c['allow_cpu_pixel_copy'])),RKMOON_ALLOW_HIGH_RES=str(int(c['allow_high_resolution'])))
+    e.pop('CONFIGURATION_DIRECTORY',None)
+    e.pop('SUNSHINE_MIGRATE_CONFIG',None)
     e.pop('RKMOON_HID_SOCKET',None)
     e.pop('RKMOON_AUDIO_DEVICE',None)
     e['RKMOON_ADMIN_SOCKET']=str(state/'admin.sock')

@@ -15,6 +15,9 @@ def module(name):
 run=module('run');validator=module('validate_capture')
 class ToolTests(unittest.TestCase):
     def config(self):return json.loads((ROOT/'config/example.json').read_text())
+    def test_packaged_apps_has_no_commands(self):
+        data=json.loads((ROOT/'config/hdmi-apps.json').read_text())
+        self.assertEqual(data,{'env':{},'apps':[{'name':'HDMI','cmd':'','image-path':''}]})
     def test_example_is_unprivileged_and_unauthorized(self):
         c=self.config();self.assertFalse(c['capture_ownership_authorized']);self.assertFalse(c['input']['enabled']);self.assertFalse(c['input']['exclusive_hid_authorized'])
     def test_config_unknown_fields(self):

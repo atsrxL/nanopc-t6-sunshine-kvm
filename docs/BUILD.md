@@ -54,7 +54,7 @@ python3 tools/apply_sunshine.py vendor/sunshine --apply
 
 补丁要求固定HEAD、干净工作树、唯一源码锚点。应用一次后重复执行会因脏树拒绝，这是保护，不应绕过。完整上游下载/打补丁/链接在本次云端没有执行成功。若固定版本签名、queue类型、目标名或依赖造成失败，先记录准确错误并修小范围适配/测试，再继续。
 
-最小服务分支产物是 `build/sunshine/rkmoon-kvm`，构建不需要 WebUI/npm，不启动上游桌面入口，不监听 WebUI 管理端口；仍需要固定 Sunshine 子模块、Linux 开发包与原 GameStream 网络协议模块。`libasound2-dev` 是新增的专用音频开发依赖；构建配置关闭桌面/DRM/VAAPI/Vulkan/CUDA 等采集编码路线，不会增加 CPU 视频编码兜底。需要离线/可信资产目录（源代码自带 `assets/apps.json`，仅 `config::parse` 默认文件；服务端固定 HDMI 入口忽略应用列表）。不运行上游 `cmake --install`；本包从独立 build 目录运行，运行前 `tools/run.py` 核验专用 marker。实际编译/运行证据以 `docs/ACCEPTANCE.md` 单列为准。
+最小服务分支产物是 `build/sunshine/rkmoon-kvm`，构建不需要 WebUI/npm，不启动上游桌面入口，不监听 WebUI 管理端口；仍需要固定 Sunshine 子模块、Linux 开发包与原 GameStream 网络协议模块。`libasound2-dev` 是新增的专用音频开发依赖；构建配置关闭桌面/DRM/VAAPI/Vulkan/CUDA 等采集编码路线，不会增加 CPU 视频编码兜底。二进制旁只打包 `assets/apps.json`（自有固定 HDMI/no-command JSON）与 `assets/box.png`（固定 Sunshine 上游图标，随包保留上游 LICENSE/NOTICE），不打包上游包含 Steam/xrandr 命令的 Linux apps.json，也不打包 Web 树。main 要求绝对配置路径和用户自有0700 HOME/XDG_CONFIG_HOME，通过 `/proc/self/exe` 定位并核验两个资产后切cwd到binary目录；缺资产/目录权限/路径错误拒绝启动。私有state和日志继续由绝对XDG路径解析，overlay阻止已安装Sunshine的自动state迁移。不运行上游 `cmake --install`；本包从独立 build 目录运行，运行前 `tools/run.py` 核验专用 marker。实际编译/运行证据以 `docs/ACCEPTANCE.md` 单列为准。
 
 ## 5. 设备权限
 

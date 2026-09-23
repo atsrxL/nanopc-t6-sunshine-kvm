@@ -64,6 +64,8 @@ def make_changes(original):
             for signature,call in calls.items():
                 text=at_entry(text,signature,"    if (rkmoon_sunshine::enabled()) { "+call+" return; }\n")
         elif path=="src/platform/linux/misc.cpp":
+            text=at_entry(text,"  fs::path appdata()",
+                '    if (rkmoon_sunshine::enabled()) { auto base = fs::path(lizardbyte::common::get_env("XDG_CONFIG_HOME")); return base.is_absolute() ? base / "sunshine" : fs::path("/nonexistent/rkmoon-private-state-required"); } // Never migrate an installed Sunshine state.\n')
             text=at_entry(text,"  std::unique_ptr<deinit_t> init()",
                 "    if (rkmoon_sunshine::enabled()) { return std::make_unique<deinit_t>(); } // No EGL/desktop capture initialization.\n")
         elif path=="src/audio.cpp":
@@ -147,7 +149,7 @@ def make_changes(original):
             end=text.index("# docs\n",start)
             text=text[:start]+"# No NPM/Web UI target in this dedicated build.\n\n"+text[end:]
         elif path=="CMakeLists.txt":
-            text=once(text,"# setup compile definitions\n", "set(RKMOON_MINIMAL_BUILD ON) # Explicit external HDMI/MPP path; no desktop capture backend.\n# setup compile definitions\n")
+            text=once(text,"# setup compile definitions\n", "set(RKMOON_MINIMAL_BUILD ON) # Explicit external HDMI/MPP path; no desktop capture backend.\nset(SUNSHINE_ASSETS_DIR_DEF assets) # Main anchors cwd to this binary directory.\n# setup compile definitions\n")
             text=once(text,"# target definitions\n",'''# Only the GameStream host and RTSP network service; no Web UI, UPnP or desktop entrypoint.
 list(REMOVE_ITEM SUNSHINE_TARGET_FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
@@ -174,6 +176,12 @@ target_include_directories(sunshine PRIVATE
 find_library(RKMOON_ALSA_LIB asound REQUIRED)
 target_link_libraries(sunshine "${RKMOON_ALSA_LIB}")
 set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
+# Only compatibility defaults/artwork, never the Web UI tree.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/assets")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/hdmi-apps.json"
+  "${CMAKE_CURRENT_BINARY_DIR}/assets/apps.json" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src_assets/common/assets/box.png"
+  "${CMAKE_CURRENT_BINARY_DIR}/assets/box.png" COPYONLY)
 '''
         else:
             raise PatchError("unexpected source file")
@@ -208,6 +216,7 @@ def main():
             payload=stage/"payload";payload.mkdir()
             for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp","rkmoon_admin_io.hpp","rkmoon_audio_pcm.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
+            shutil.copy2(ROOT/"config/hdmi-apps.json",payload/"hdmi-apps.json")
             shutil.copytree(ROOT/"include",payload/"include")
             shutil.copy2(ROOT/"LICENSE",payload/"LICENSE")
             try:

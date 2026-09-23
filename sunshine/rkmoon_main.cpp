@@ -14,11 +14,14 @@
 #include "src/utility.h"
 #include <rs.h>
 #include <sys/auxv.h>
+#include <sys/stat.h>
+#include <cstdlib>
 #include <unistd.h>
 #include <signal.h>
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <thread>
 
@@ -38,10 +41,34 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   // No Sunshine command dispatcher or config overrides from untrusted argv.
-  if (argc != 2 || std::strcmp(argv[1], "--help") == 0) {
+  if (argc != 2 || argv[1][0] != '/') {
     std::cerr << "usage: rkmoon-kvm /absolute/path/to/private/sunshine.conf\n";
     return 2;
   }
+  // Required private state, also for direct invocation (not only the supervisor).
+  for (const char *name : {"HOME", "XDG_CONFIG_HOME"}) {
+    const char *path = std::getenv(name);
+    struct stat state {};
+    if (!path || path[0] != '/' || lstat(path, &state) != 0 || !S_ISDIR(state.st_mode) ||
+        state.st_uid != geteuid() || (state.st_mode & 0077) != 0) {
+      std::cerr << "Private absolute HOME and XDG_CONFIG_HOME directories (0700) required\n";
+      return 1;
+    }
+  }
+  umask(0077);
+  // Only the two shipped compatibility assets are relative. Private config,
+  // HOME/XDG, worker and admin socket paths remain absolute and user-owned.
+  std::error_code cwd_error;
+  auto binary = std::filesystem::read_symlink("/proc/self/exe", cwd_error);
+  if (cwd_error) { std::cerr << "Cannot resolve dedicated binary directory\n"; return 1; }
+  for (const char *name : {"apps.json", "box.png"}) {
+    if (!std::filesystem::is_regular_file(binary.parent_path() / "assets" / name, cwd_error) || cwd_error) {
+      std::cerr << "Dedicated compatibility asset missing; refusing to start\n";
+      return 1;
+    }
+  }
+  std::filesystem::current_path(binary.parent_path(), cwd_error);
+  if (cwd_error) { std::cerr << "Cannot anchor dedicated assets directory\n"; return 1; }
   mail::man = std::make_shared<safe::mail_raw_t>();
   lifetime::argv = argv;
   if (config::parse(argc, argv)) return 1;
