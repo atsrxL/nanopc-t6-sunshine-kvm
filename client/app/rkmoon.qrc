@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/data">
+        <file alias="ModeSeven.ttf">../../vendor/moonlight-qt/app/ModeSeven.ttf</file>
+    </qresource>
+</RCC>
