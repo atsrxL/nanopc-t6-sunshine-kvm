@@ -30,10 +30,10 @@ inline bool receive_line(int fd, std::string &request, std::stop_token stop) {
   char chunk[128];
   while (request.size() < 512 && ready(fd, POLLIN, deadline, stop)) {
     ssize_t n = recv(fd, chunk, std::min(sizeof(chunk), 512 - request.size()), 0);
-    if (n < 0 && errno == EINTR) continue;
+    if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
     if (n <= 0) return false;
     request.append(chunk, size_t(n));
-    if (request.find('\n') != std::string::npos) return request.back() == '\n';
+    if (auto pos = request.find('\n'); pos != std::string::npos) return pos == request.size() - 1;
   }
   return false;
 }
@@ -41,7 +41,7 @@ inline bool send_reply(int fd, std::string_view reply, std::stop_token stop) {
   const auto deadline = clock::now() + std::chrono::seconds(5);
   while (!reply.empty() && ready(fd, POLLOUT, deadline, stop)) {
     ssize_t n = send(fd, reply.data(), reply.size(), MSG_NOSIGNAL);
-    if (n < 0 && errno == EINTR) continue;
+    if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
     if (n <= 0) return false;
     reply.remove_prefix(size_t(n));
   }

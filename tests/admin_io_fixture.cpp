@@ -36,6 +36,18 @@ int main() {
   receiver.join();
   close(fds[0]);close(fds[1]);
   assert(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+  const std::string two_lines="LIST\nLIST\n";
+  assert(send(fds[1], two_lines.data(), two_lines.size(), 0) == (ssize_t)two_lines.size());
+  std::string rejected;
+  assert(!rkmoon_sunshine::admin_io::receive_line(fds[0], rejected, {}));
+  close(fds[0]);close(fds[1]);
+  assert(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+  const std::string oversized(512,'a');
+  assert(send(fds[1], oversized.data(), oversized.size(), 0) == (ssize_t)oversized.size());
+  rejected.clear();
+  assert(!rkmoon_sunshine::admin_io::receive_line(fds[0], rejected, {}));
+  close(fds[0]);close(fds[1]);
+  assert(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
   std::stop_source source;
   auto before = std::chrono::steady_clock::now();
   std::thread cancel([&] { std::this_thread::sleep_for(50ms); source.request_stop(); });

@@ -113,6 +113,7 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
     }
     std::fill(pcm_samples.begin(), pcm_samples.end(), 0);
     bool valid = bool(pcm);
+    bool cleared_stale = false;
     if (pcm) {
       // An ALSA device can expose old buffered PCM after scheduler pauses or
       // recovery. Discard the capture ring, never replay stale sound as new.
@@ -120,7 +121,8 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
       if (available == -EPIPE) ++xruns;
       if (available > frames * 2) {
         ++stale;
-        if (snd_pcm_drop(pcm.get()) < 0 || snd_pcm_prepare(pcm.get()) < 0) pcm.reset();
+        cleared_stale = snd_pcm_drop(pcm.get()) >= 0 && snd_pcm_prepare(pcm.get()) >= 0;
+        if (!cleared_stale) pcm.reset();
         valid = false;
       } else if (available < 0 && available != -EAGAIN) {
         pcm.reset();
@@ -138,9 +140,13 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
       }
       if (received != frames) valid = false;
       if (!valid) {
-        pcm.reset();
-        retry_at = std::chrono::steady_clock::now() + 2s;
-        BOOST_LOG(warning) << "RKMoon HDMI audio interrupted/stale; sending silence and retrying";
+        if (!cleared_stale) {
+          pcm.reset();
+          retry_at = std::chrono::steady_clock::now() + 2s;
+          BOOST_LOG(warning) << "RKMoon HDMI audio interrupted; sending silence and retrying";
+        } else if (stale <= 3 || stale % 100 == 0) {
+          BOOST_LOG(warning) << "RKMoon HDMI stale audio ring discarded; stale_resets=" << stale;
+        }
         std::fill(pcm_samples.begin(), pcm_samples.end(), 0);
       }
     }
