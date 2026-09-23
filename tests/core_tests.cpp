@@ -2,6 +2,7 @@
 // Synthetic NAL/header fixtures exercise parser contracts, NOT hardware or decoder correctness.
 #include "rkmoon/core.hpp"
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fcntl.h>
 #include <fstream>
@@ -46,6 +47,48 @@ int main(int argc,char** argv){try{
     {"sequence_good",[]{SequenceGate g;g.accept(au());auto m=au();m.h.seq=2;g.accept(m);}},
     {"pixel_black",[]{Layout l{2,2,6,12,Pixels::bgr24,false};std::vector<uint8_t>s(12),d(6);to_nv12(l,s.data(),s.size(),d.data(),d.size(),2,2);must(d==std::vector<uint8_t>({16,16,16,16,128,128}));}},
     {"pixel_white",[]{Layout l{2,2,6,12,Pixels::bgr24,false};std::vector<uint8_t>s(12,255),d(6);to_nv12(l,s.data(),s.size(),d.data(),d.size(),2,2);must(d==std::vector<uint8_t>({235,235,235,235,128,128}));}},
+    {"pixel_limited_levels",[]{
+      Layout l{2,2,6,12,Pixels::bgr24,false,1,true};
+      for(int level:{0,15,16,17,64,126,234,235,236,255}) {
+        std::vector<uint8_t>s(12,uint8_t(level)),d(6);
+        to_nv12(l,s.data(),s.size(),d.data(),d.size(),2,2);
+        must(d==std::vector<uint8_t>({uint8_t(std::clamp(level,16,235)),uint8_t(std::clamp(level,16,235)),uint8_t(std::clamp(level,16,235)),uint8_t(std::clamp(level,16,235)),128,128}));
+      }
+      l.full_range=true;uint8_t s[12]{},d[6]{};
+      rejects([&]{to_nv12(l,s,12,d,6,2,2);});
+      must(!direct_layout({2560,1440,7680,11059200,Pixels::bgr24,false,1,true}));
+    }},
+    {"pixel_limited_colors",[]{
+      Layout l{2,2,6,12,Pixels::bgr24,false,1,true};
+      // R,G,B and independent BT.709 limited Y,U,V reference values.
+      const int colors[][6]={{235,16,16,63,102,240},{16,235,16,173,42,26},{16,16,235,32,240,118},{16,235,235,188,154,16},{235,16,235,78,214,230},{235,235,16,219,16,138}};
+      for(const auto& c:colors) {
+        std::vector<uint8_t>s(12),d(6);
+        for(int i=0;i<4;++i){s[i*3]=c[2];s[i*3+1]=c[1];s[i*3+2]=c[0];}
+        to_nv12(l,s.data(),s.size(),d.data(),d.size(),2,2);
+        for(int i=0;i<4;++i)must(d[i]==c[3]);
+        must(d[4]==c[4]&&d[5]==c[5]);
+      }
+      for(int r:{0,16,17,64,126,234,235,255})for(int g:{0,16,17,64,126,234,235,255})for(int b:{0,16,17,64,126,234,235,255}) {
+        std::vector<uint8_t>s(12),d(6);
+        for(int i=0;i<4;++i){s[i*3]=b;s[i*3+1]=g;s[i*3+2]=r;}
+        to_nv12(l,s.data(),s.size(),d.data(),d.size(),2,2);
+        double rr=std::clamp(r-16,0,219)/219.0,gg=std::clamp(g-16,0,219)/219.0,bb=std::clamp(b-16,0,219)/219.0;
+        double y=.2126*rr+.7152*gg+.0722*bb;
+        must(std::abs(int(d[0])-(16+std::lround(219*y)))<=1);
+        must(std::abs(int(d[4])-(128+std::lround(112*(bb-y)/.9278)))<=1);
+        must(std::abs(int(d[5])-(128+std::lround(112*(rr-y)/.7874)))<=1);
+      }
+    }},
+    {"pixel_limited_stride",[]{
+      Layout l{2,2,8,16,Pixels::bgr24,false,1,true};
+      std::vector<uint8_t>s{16,16,235,16,235,16,99,99,235,16,16,235,235,235,99,99},d(24,255);
+      to_nv12(l,s.data(),s.size(),d.data(),d.size(),4,4);
+      must(d[0]==63&&d[1]==173&&d[4]==32&&d[5]==235);
+      must(d[16]==128&&d[17]==128&&d[18]==128&&d[20]==128&&d[8]==16&&d[2]==16);
+      rejects([&]{to_nv12(l,s.data(),15,d.data(),d.size(),4,4);});
+      rejects([&]{to_nv12(l,s.data(),s.size(),d.data(),23,4,4);});
+    }},
     {"pixel_stride",[]{Layout l{2,2,4,12,Pixels::nv12,false};std::vector<uint8_t>s{10,20,99,99,30,40,99,99,110,120,99,99},d(24);to_nv12(l,s.data(),s.size(),d.data(),d.size(),4,4);must(d[0]==10&&d[4]==30&&d[8]==16&&d[16]==110&&d[20]==128);}},
     {"pixel_bounds",[]{Layout l{2,2,6,12,Pixels::bgr24,false};uint8_t s[12]{},d[6]{};rejects([&]{to_nv12(l,s,11,d,6,2,2);});rejects([&]{to_nv12(l,s,12,d,5,2,2);});}},
     {"direct_layout",[]{must(direct_layout({3840,2160,3840,12441600,Pixels::nv12,false}));must(!direct_layout({1920,1080,1920,3110400,Pixels::nv12,false}));must(direct_layout({2560,1440,7680,11059200,Pixels::bgr24,false}));}},

@@ -40,7 +40,7 @@ public:
   void recover() { need_idr_=true; }
 };
 enum class Pixels { nv12, bgr24 };
-struct Layout { uint32_t width{}, height{}, stride{}, sizeimage{}; Pixels pixels=Pixels::nv12; bool full_range=false; uint32_t transfer=1; };
+struct Layout { uint32_t width{}, height{}, stride{}, sizeimage{}; Pixels pixels=Pixels::nv12; bool full_range=false; uint32_t transfer=1; bool rgb_limited=false; }; // full_range: encoded YUV; rgb_limited: BGR input [16,235]
 bool direct_layout(const Layout&);
 // CPU PIXEL copy/conversion only. No software video encoder exists in this project.
 void to_nv12(const Layout&, const uint8_t* source, size_t source_size,

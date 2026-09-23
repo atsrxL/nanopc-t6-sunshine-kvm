@@ -24,6 +24,7 @@ struct Encoder::Impl {
   MppCtx ctx=nullptr;MppApi* api=nullptr;MppEncCfg cfg=nullptr;
   MppBufferGroup group=nullptr;MppBuffer staging=nullptr;std::vector<MppBuffer> imported;
   MppFrameFormat format=MPP_FMT_YUV420SP;
+  std::vector<uint8_t> rgb_scratch; // cached sequential copy before limited RGB CSC
   ~Impl(){
     // Critical ordering: flush/destroy hardware BEFORE imported buffers, then Capture teardown.
     if(ctx) {api->reset(ctx);mpp_destroy(ctx);}
@@ -54,9 +55,11 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
     if(!p->direct){for(auto b:p->imported)mpp_buffer_put(b);p->imported.clear();}
   }
   if(!p->direct&&!allow_copy) throw std::runtime_error("DMA-BUF layout/export/import unavailable; explicitly authorize --allow-copy");
-  p->hs=p->direct?l.stride:align64(c.width*(l.pixels==Pixels::bgr24?3:1));
+  const bool hardware_bgr=l.pixels==Pixels::bgr24&&!l.rgb_limited;
+  p->hs=p->direct?l.stride:align64(c.width*(hardware_bgr?3:1));
   p->vs=p->direct?c.height:align64(c.height);
-  p->format=l.pixels==Pixels::bgr24?MPP_FMT_BGR888:MPP_FMT_YUV420SP;
+  p->format=hardware_bgr?MPP_FMT_BGR888:MPP_FMT_YUV420SP;
+  if(l.pixels==Pixels::bgr24&&l.rgb_limited) p->rgb_scratch.resize(l.sizeimage);
   auto codec=c.codec==Codec::hevc?MPP_VIDEO_CodingHEVC:MPP_VIDEO_CodingAVC;
   ok(mpp_check_support_format(MPP_CTX_ENC,codec),"check_support_format");
   ok(mpp_create(&p->ctx,&p->api),"create");ok(mpp_init(p->ctx,MPP_CTX_ENC,codec),"init");
@@ -96,7 +99,7 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
   ok(p->api->control(p->ctx,MPP_SET_OUTPUT_TIMEOUT,&wait),"nonblocking output");
   if(!p->direct){
     ok(mpp_buffer_group_get_internal(&p->group,MppBufferType(MPP_BUFFER_TYPE_DRM|MPP_BUFFER_FLAGS_CACHABLE),0),"buffer_group");
-    const size_t bytes=size_t(p->hs)*p->vs*(l.pixels==Pixels::bgr24?2:3)/2;
+    const size_t bytes=size_t(p->hs)*p->vs*(hardware_bgr?2:3)/2;
     ok(mpp_buffer_get(p->group,&p->staging,bytes),"staging buffer");
   }
   std::cerr<<"{\"kind\":\"encoder\",\"codec\":\""<<(c.codec==Codec::hevc?"hevc":"h264")
@@ -123,14 +126,18 @@ Message Encoder::encode(const Capture::Frame& raw,Capture::Buffer* capture,bool 
           if(raw.bytes<raw.offset||raw.bytes-raw.offset<p.source.sizeimage)
             throw std::runtime_error("short capture input");
           const auto* src=static_cast<uint8_t*>(capture->data)+raw.offset;
-          if(p.source.pixels==Pixels::bgr24){
+          if(p.format==MPP_FMT_BGR888){
             // Preserve BGR for MPP's hardware color conversion. Sequential
             // copies avoid expensive repeated reads of uncached V4L2 MMAP.
             std::memset(dst,0,size_t(p.hs)*p.vs);
             for(uint32_t y=0;y<p.c.height;++y)
               std::memcpy(dst+size_t(y)*p.hs,src+size_t(y)*p.source.stride,size_t(p.c.width)*3);
           }else{
-            to_nv12(p.source,src,raw.bytes-raw.offset,dst,size_t(p.hs)*p.vs*3/2,p.hs,p.vs);
+            if(!p.rgb_scratch.empty()) {
+              std::memcpy(p.rgb_scratch.data(),src,p.source.sizeimage);
+              src=p.rgb_scratch.data();
+            }
+            to_nv12(p.source,src,p.rgb_scratch.empty()?raw.bytes-raw.offset:p.rgb_scratch.size(),dst,size_t(p.hs)*p.vs*3/2,p.hs,p.vs);
           }
         }
         catch(...){if(sync){fence.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_READ;ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence);}throw;}
