@@ -2,7 +2,7 @@
 """Normalized Windows VK -> kvmd Web key names. No text/clipboard injection."""
 KEYS = {**{v: f"Key{chr(v)}" for v in range(0x41, 0x5B)},
         **{v: f"Digit{chr(v)}" for v in range(0x30, 0x3A)},
-        **{0x70+i: f"F{i+1}" for i in range(24)},
+        **{0x70+i: f"F{i+1}" for i in range(12)},
         **{0x60+i: f"Numpad{i}" for i in range(10)},
         0x08:"Backspace",0x09:"Tab",0x0C:"Numpad5",0x0D:"Enter",0x10:"ShiftLeft",
         0x11:"ControlLeft",0x12:"AltLeft",0x13:"Pause",0x14:"CapsLock",0x1B:"Escape",

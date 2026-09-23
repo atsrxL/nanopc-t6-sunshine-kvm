@@ -8,7 +8,7 @@ Moonlight已配对/验证/解密输入 → Sunshine高层映射 → 专用平台
 
 ## 支持范围
 
-规范化Windows VK的常见US键盘键、左右修饰键、导航、F1–F24、数字区、常用OEM标点；鼠标相对移动、5按钮、垂直和水平滚轮。Generic/Left modifier别名用引用集合避免过早key-up；重复down不重复按键，自动重复交给USB host。
+规范化Windows VK的常见US键盘键、左右修饰键、导航、F1–F12、数字区、常用OEM标点；鼠标相对移动、5按钮、垂直和水平滚轮。固定 kvmd 不支持大部分 F13–F24，首版统一拒绝这些扩展键，释放过程也不发送它们。Generic/Left modifier别名用引用集合避免过早key-up；重复down不重复按键，自动重复交给USB host。
 
 VK不是任意Unicode文本。JIS/IME特有键、媒体键、layout-specific扩展/非标准flags、绝对鼠标、触摸、笔和手柄不在首版验收范围。未知键撤销输入租约并释放，不转发到T6“兜底”。必要时本地扩展映射必须补测试并核实kvmd允许的Web key names。
 

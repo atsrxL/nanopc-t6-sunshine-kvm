@@ -30,6 +30,15 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(InputError): parse_event({'op':'move','x':True,'y':0})
     def test_unknown_key(self):
         with self.assertRaises(InputError): parse_event({'op':'key','vk':0,'down':True})
+    def test_function_key_backend_contract(self):
+        # Pinned kvmd rejects most F13-F24 names. They must never enter a
+        # lease or startup neutralization, which otherwise fails every start.
+        from rkmoon_hid.keys import KEYS
+        self.assertEqual({v for v in KEYS.values() if v.startswith('F')},
+                         {f'F{i}' for i in range(1,13)})
+        for vk in range(0x7C,0x88):
+            with self.assertRaises(InputError):
+                parse_event({'op':'key','vk':vk,'down':True})
     def test_extra_field(self):
         with self.assertRaises(InputError): parse_event({'op':'ping','extra':1})
     def test_missing_field(self):

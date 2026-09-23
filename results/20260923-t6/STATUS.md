@@ -40,3 +40,13 @@ P3 只读检查确认 `/etc/t6-kvm/main.yaml` 使用启用鉴权的 `/run/t6-kvm
 建议下一授权窗口：保存原配置、描述符和 UDC 绑定到 `/root/agent.backup/`；将现有鼠标改为匹配 kvmd 的相对模式并重建 gadget（目标电脑 USB 键鼠会短暂重连）；隔离其他输入源后测试 Moonlight 键鼠和异常释放；结束时恢复原绝对模式、绑定和窗口入口服务状态。实施前仍需核对现有 gadget 创建入口，并审阅具体配置差异。此方案尚未执行。
 
 已核对创建入口：`t6-kvm-hardware.service` 调用 `prepare_hardware.py`，后者调用 `gadget.py`。现有 `gadget.py` 固定 `make_mouse_hid(True,True)`。拟议最小差异为专用临时副本使用 `make_mouse_hid(False,True)`，配套 kvmd mouse.absolute 从 true 改为 false；不修改旧项目源码。保留键盘描述符、VID/PID、序列号、UDC 和水平滚轮。恢复时使用原创建器恢复绝对鼠标并还原 kvmd 配置；不执行 prepare_hardware.py，避免其同时应用 EDID。所有差异目前仅为评审方案，未部署。
+
+## Windows 与 P3 增量实测
+
+用户已授权相对 HID、独占输入与回滚。Windows 客户端 192.168.123.180，官方 Moonlight 6.1.0，RX 9060 XT；配对成功，1920x1080x60 HEVC format 0x100，D3D11VA 硬解，用户确认在另一显示器看到 MS-A2 画面。菜单使用 QT_QUICK_BACKEND=software，视频仍硬解。Windows 为短时测试，非长稳验收。
+
+独立 kvmd 使用 Unix peer credentials 鉴权，授权 at 返回200、未授权 root 返回401；原服务配置未修改。相对描述符 report_length=5，MS-A2 实际枚举 REL X/Y、无 ABS。固定 kvmd 拒绝大部分 F13–F24，原 neutralize 因此失败；映射修复为 F1–F12，Linux 47 项 HID 测试通过。Mac 不支持 Linux SO_PEERCRED，Mac 上服务测试失败不作为 Linux 回归结果。
+
+MS-A2 evdev 独占观察收到实际键盘、按钮、相对移动及滚轮事件；最终 held_count=0。观察期间包含后端直接测试、Windows 客户端活动、租约 EOF/心跳超时测试，混合统计不能证明每个场景独立通过。第二租约被拒绝。尚未完成逐场景 USB 释放、worker/bridge SIGKILL、后端拒绝响应完整物理验收。
+
+结束时停止 rkmoon-session-p3/rkmoon-input-p3，恢复原绝对 HID 描述符、UDC 绑定、HID 节点权限和设备 ACL；旧三个服务保持 inactive。Windows 临时计划任务已删除，配对资料保留且不提交。
