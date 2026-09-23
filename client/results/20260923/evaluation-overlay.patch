@@ -1,0 +1,332 @@
+--- a/app/settings/streamingpreferences.h
++++ b/app/settings/streamingpreferences.h
+@@ -2,14 +2,14 @@
+ 
+ #include <QObject>
+ #include <QRect>
+-#include <QQmlEngine>
++// RKMoon minimal KVM client: the QML engine binding is removed (no QtQml dependency).
+ 
+ class StreamingPreferences : public QObject
+ {
+     Q_OBJECT
+ 
+ public:
+-    static StreamingPreferences* get(QQmlEngine *qmlEngine = nullptr);
++    static StreamingPreferences* get();
+ 
+     Q_INVOKABLE static int
+     getDefaultBitrate(int width, int height, int fps, bool yuv444);
+@@ -217,10 +217,9 @@
+     void languageChanged();
+ 
+ private:
+-    explicit StreamingPreferences(QQmlEngine *qmlEngine);
++    explicit StreamingPreferences();
+ 
+     QString getSuffixFromLanguage(Language lang);
+ 
+-    QQmlEngine* m_QmlEngine;
+ };
+ 
+--- a/app/streaming/input/input.h
++++ b/app/streaming/input/input.h
+@@ -1,7 +1,7 @@
+ #pragma once
+ 
+ #include "settings/streamingpreferences.h"
+-#include "backend/computermanager.h"
++#include "backend/nvcomputer.h" // RKMoon: was backend/computermanager.h (no mDNS discovery)
+ 
+ #include <SDL.h>
+ 
+--- a/app/settings/streamingpreferences.cpp
++++ b/app/settings/streamingpreferences.cpp
+@@ -55,22 +55,17 @@
+ static StreamingPreferences* s_GlobalPrefs;
+ static QReadWriteLock s_GlobalPrefsLock;
+ 
+-StreamingPreferences::StreamingPreferences(QQmlEngine *qmlEngine)
+-    : m_QmlEngine(qmlEngine)
++StreamingPreferences::StreamingPreferences()
+ {
+     reload();
+ }
+ 
+-StreamingPreferences* StreamingPreferences::get(QQmlEngine *qmlEngine)
++StreamingPreferences* StreamingPreferences::get()
+ {
+     {
+         QReadLocker readGuard(&s_GlobalPrefsLock);
+ 
+-        // If we have a preference object and it's associated with a QML engine or
+-        // if the caller didn't specify a QML engine, return the existing object.
+-        if (s_GlobalPrefs && (s_GlobalPrefs->m_QmlEngine || !qmlEngine)) {
+-            // The lifetime logic here relies on the QML engine also being a singleton.
+-            Q_ASSERT(!qmlEngine || s_GlobalPrefs->m_QmlEngine == qmlEngine);
++        if (s_GlobalPrefs) {
+             return s_GlobalPrefs;
+         }
+     }
+@@ -78,20 +73,9 @@
+     {
+         QWriteLocker writeGuard(&s_GlobalPrefsLock);
+ 
+-        // If we already have an preference object but the QML engine is now available,
+-        // associate the QML engine with the preferences.
+-        if (s_GlobalPrefs) {
+-            if (!s_GlobalPrefs->m_QmlEngine) {
+-                s_GlobalPrefs->m_QmlEngine = qmlEngine;
+-            }
+-            else {
+-                // We could reach this codepath if another thread raced with us
+-                // and created the object while we were outside the pref lock.
+-                Q_ASSERT(!qmlEngine || s_GlobalPrefs->m_QmlEngine == qmlEngine);
+-            }
+-        }
+-        else {
+-            s_GlobalPrefs = new StreamingPreferences(qmlEngine);
++        // RKMoon minimal KVM client: there is no QML engine to associate with.
++        if (!s_GlobalPrefs) {
++            s_GlobalPrefs = new StreamingPreferences();
+         }
+ 
+         return s_GlobalPrefs;
+@@ -189,13 +173,6 @@
+ {
+     static QTranslator* translator = nullptr;
+ 
+-#if QT_VERSION < QT_VERSION_CHECK(5, 10, 0)
+-    if (m_QmlEngine != nullptr) {
+-        // Dynamic retranslation is not supported until Qt 5.10
+-        return false;
+-    }
+-#endif
+-
+     QTranslator* newTranslator = new QTranslator();
+     QString languageSuffix = getSuffixFromLanguage(language);
+ 
+@@ -219,20 +196,8 @@
+         delete newTranslator;
+     }
+ 
+-    if (m_QmlEngine != nullptr) {
+-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+-        // This is a dynamic retranslation from the settings page.
+-        // We have to kick the QML engine into reloading our text.
+-        m_QmlEngine->retranslate();
+-#else
+-        // Unreachable below Qt 5.10 due to the check above
+-        Q_ASSERT(false);
+-#endif
+-    }
+-    else {
+-        // This is a translation from a non-QML context, which means
+-        // it is probably app startup. There's nothing to refresh.
+-    }
++    // RKMoon minimal KVM client: there is no QML engine to refresh; the Qt Widgets
++    // front end reads its own strings when it is constructed.
+ 
+     return true;
+ }
+--- a/app/streaming/input/input.cpp
++++ b/app/streaming/input/input.cpp
+@@ -142,35 +142,9 @@
+     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES, streamIgnoreDevices.toUtf8());
+     SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT, streamIgnoreDevicesExcept.toUtf8());
+ 
+-    // We must initialize joystick explicitly before gamecontroller in order
+-    // to ensure we receive gamecontroller attach events for gamepads where
+-    // SDL doesn't have a built-in mapping. By starting joystick first, we
+-    // can allow mapping manager to update the mappings before GC attach
+-    // events are generated.
+-    SDL_assert(!SDL_WasInit(SDL_INIT_JOYSTICK));
+-    if (SDL_InitSubSystem(SDL_INIT_JOYSTICK) != 0) {
+-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+-                     "SDL_InitSubSystem(SDL_INIT_JOYSTICK) failed: %s",
+-                     SDL_GetError());
+-    }
+-
+-    MappingManager mappingManager;
+-    mappingManager.applyMappings();
+-
+-    // Flush gamepad arrival and departure events which may be queued before
+-    // starting the gamecontroller subsystem again. This prevents us from
+-    // receiving duplicate arrival and departure events for the same gamepad.
+-    SDL_FlushEvent(SDL_CONTROLLERDEVICEADDED);
+-    SDL_FlushEvent(SDL_CONTROLLERDEVICEREMOVED);
+-
+-    // We need to reinit this each time, since you only get
+-    // an initial set of gamepad arrival events once per init.
+-    SDL_assert(!SDL_WasInit(SDL_INIT_GAMECONTROLLER));
+-    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
+-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+-                     "SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) failed: %s",
+-                     SDL_GetError());
+-    }
++    // RKMoon minimal KVM client: no joystick, gamecontroller or haptic subsystem is
++    // initialized, no controller mappings are loaded and no controller packets are ever
++    // sent to the host. See client/app/src/nogamepad.cpp for the no-op handlers.
+ 
+ #if !SDL_VERSION_ATLEAST(2, 0, 9)
+     SDL_assert(!SDL_WasInit(SDL_INIT_HAPTIC));
+@@ -181,10 +155,8 @@
+     }
+ #endif
+ 
+-    // Initialize the gamepad mask with currently attached gamepads to avoid
+-    // causing gamepads to unexpectedly disappear and reappear on the host
+-    // during stream startup as we detect currently attached gamepads one at a time.
+-    m_GamepadMask = getAttachedGamepadMask();
++    // RKMoon minimal KVM client: the host is always told that zero gamepads are attached.
++    m_GamepadMask = 0;
+ 
+     SDL_zero(m_GamepadState);
+     SDL_zero(m_LastTouchDownEvent);
+@@ -219,11 +191,7 @@
+     SDL_assert(!SDL_WasInit(SDL_INIT_HAPTIC));
+ #endif
+ 
+-    SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+-    SDL_assert(!SDL_WasInit(SDL_INIT_GAMECONTROLLER));
+-
+-    SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
+-    SDL_assert(!SDL_WasInit(SDL_INIT_JOYSTICK));
++    // RKMoon minimal KVM client: these subsystems were never initialized.
+ 
+     // Return background event handling to off
+     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "0");
+--- a/app/streaming/audio/audio.cpp
++++ b/app/streaming/audio/audio.cpp
+@@ -10,6 +10,7 @@
+ #endif
+ 
+ #include "renderers/sdl.h"
++#include "rkmoon_audio_control.h"
+ 
+ #include <Limelight.h>
+ 
+@@ -234,6 +235,13 @@
+         if (samplesDecoded > 0) {
+             SDL_assert(desiredBufferSize >= frameSize * samplesDecoded);
+             desiredBufferSize = frameSize * samplesDecoded;
++
++            // RKMoon minimal KVM client: apply the client-side volume/mute gain. Muting is
++            // implemented as a zero gain after decoding (rather than skipping the decode) so
++            // the Opus decoder state and the renderer's timing stay continuous.
++            RkmoonAudioControl::applyGain(buffer,
++                                          samplesDecoded * s_ActiveSession->m_ActiveAudioConfig.channelCount,
++                                          s_ActiveSession->m_AudioRenderer->getAudioBufferFormat() == IAudioRenderer::AudioFormat::Float32NE);
+         }
+         else {
+             desiredBufferSize = 0;
+--- a/app/streaming/session.cpp
++++ b/app/streaming/session.cpp
+@@ -1,7 +1,6 @@
+ #include "session.h"
+ #include "settings/streamingpreferences.h"
+ #include "streaming/streamutils.h"
+-#include "backend/richpresencemanager.h"
+ 
+ #include <Limelight.h>
+ #include <SDL.h>
+@@ -46,8 +45,6 @@
+ #include <QtEndian>
+ #include <QCoreApplication>
+ #include <QThreadPool>
+-#include <QSvgRenderer>
+-#include <QPainter>
+ #include <QImage>
+ #include <QGuiApplication>
+ #include <QCursor>
+@@ -1882,26 +1879,7 @@
+ 
+     m_InputHandler->setWindow(m_Window);
+ 
+-    QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
+-    QImage svgImage(ICON_SIZE, ICON_SIZE, QImage::Format_RGBA8888);
+-    svgImage.fill(0);
+-
+-    QPainter svgPainter(&svgImage);
+-    svgIconRenderer.render(&svgPainter);
+-    SDL_Surface* iconSurface = SDL_CreateRGBSurfaceWithFormatFrom((void*)svgImage.constBits(),
+-                                                                  svgImage.width(),
+-                                                                  svgImage.height(),
+-                                                                  32,
+-                                                                  4 * svgImage.width(),
+-                                                                  SDL_PIXELFORMAT_RGBA32);
+-#ifndef Q_OS_DARWIN
+-    // Other platforms seem to preserve our Qt icon when creating a new window.
+-    if (iconSurface != nullptr) {
+-        // This must be called before entering full-screen mode on Windows
+-        // or our icon will not persist when toggling to windowed mode
+-        SDL_SetWindowIcon(m_Window, iconSurface);
+-    }
+-#endif
++    // RKMoon: no SVG resource or QtSvg icon dependency.
+ 
+     // Update the window display mode based on our current monitor
+     // for if/when we enter full-screen mode.
+@@ -1956,7 +1934,6 @@
+     m_UnexpectedTermination = false;
+ 
+     // Start rich presence to indicate we're in game
+-    RichPresenceManager presence(*m_Preferences, m_App.name);
+ 
+     // Toggle the stats overlay if requested by the user
+     m_OverlayManager.setOverlayState(Overlay::OverlayDebug, m_Preferences->showPerformanceOverlay);
+@@ -1976,7 +1953,6 @@
+         // issues that could cause indefinite timeouts, delayed joystick detection,
+         // and other problems.
+         if (!SDL_WaitEventTimeout(&event, 1000)) {
+-            presence.runCallbacks();
+             continue;
+         }
+ #else
+@@ -1992,7 +1968,6 @@
+             // ARM core in the Steam Link, so we will wait 10 ms instead.
+             SDL_Delay(10);
+ #endif
+-            presence.runCallbacks();
+             continue;
+         }
+ #endif
+@@ -2057,7 +2032,6 @@
+                 break;
+             }
+ 
+-            presence.runCallbacks();
+ 
+             // Capture the mouse on SDL_WINDOWEVENT_ENTER if needed
+             if (needsFirstEnterCapture && event.window.event == SDL_WINDOWEVENT_ENTER) {
+@@ -2244,12 +2218,10 @@
+ 
+         case SDL_KEYUP:
+         case SDL_KEYDOWN:
+-            presence.runCallbacks();
+             m_InputHandler->handleKeyEvent(&event.key);
+             break;
+         case SDL_MOUSEBUTTONDOWN:
+         case SDL_MOUSEBUTTONUP:
+-            presence.runCallbacks();
+             m_InputHandler->handleMouseButtonEvent(&event.button);
+             break;
+         case SDL_MOUSEMOTION:
+@@ -2263,7 +2235,6 @@
+             break;
+         case SDL_CONTROLLERBUTTONDOWN:
+         case SDL_CONTROLLERBUTTONUP:
+-            presence.runCallbacks();
+             m_InputHandler->handleControllerButtonEvent(&event.cbutton);
+             break;
+ #if SDL_VERSION_ATLEAST(2, 0, 14)
+@@ -2352,9 +2323,6 @@
+     // the renderer may want to interact with the window
+     SDL_DestroyWindow(m_Window);
+ 
+-    if (iconSurface != nullptr) {
+-        SDL_FreeSurface(iconSurface);
+-    }
+ 
+     SDL_QuitSubSystem(SDL_INIT_VIDEO);
+ 

@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "kind": "Windows evaluation package source inputs before post-build review fixes",
+  "base_commit": "d5f2ba5bd09a608289d19e13192d1e00b836cd65",
+  "moonlight_qt": "f786e94c7b2f943e24e65d7d74deb539b827fc84",
+  "overlay_sha256": "3d1f3b3d0b77ba2dbe128d95b1a59f0811204cfacaaa43e9bf6d7c20dcce8fed",
+  "artifact": {
+    "filename": "RKMoon-Windows-x64-evaluation-20260923-9004.zip",
+    "size": 21300162,
+    "sha256": "a21379069604492686a877ffc55d9c16fe6cb382b4da1b0a73daa60f3cfa5bd6"
+  },
+  "files": {
+    "client/app/rkmoon-app.pro": "c94761326b64d80dd865765a36f254032140b939f235f7da0edbd92f84aa2598",
+    "client/app/rkmoon.qrc": "cf81c4bd3ab35cb837b7fd86c8e8ebe4275f07c86f624b7ef3473c720b49cddb",
+    "client/app/src/kvmconfig.cpp": "3de20527594804d2ed02cb82a6862140fa14232050f0a892f62c95a54720702e",
+    "client/app/src/kvmconfig.h": "2af3391a67b3afd7eed7c530d0eb5c5c6111fc13011166e52e06f7a765280f9f",
+    "client/app/src/kvmhost.cpp": "a446bb69f404a90f0665756b07b3e9d8fbfc7650532ed818b6a984db390ac95c",
+    "client/app/src/kvmhost.h": "eaf504ba0e7d81a549831b1570b86f013e4b1d92eb459b7a7df72a8def2bb820",
+    "client/app/src/kvmwindow.cpp": "4f9cc173e04a51770591c3608908e4dd82843cf3ff37412d975f499283a5be27",
+    "client/app/src/kvmwindow.h": "54edf735420ce5596681720a939edf774d62479d5c67a15c0e38b69b677d41a7",
+    "client/app/src/main.cpp": "af51827ebf5cceeb46be5894aa6fd74758dc909c6e03b73019e24fd331e17289",
+    "client/app/src/nocompat.cpp": "62bfcca83982cded615bdbb274470d6a5094554d7312192b81f84fd26a30b6ff",
+    "client/app/src/nogamepad.cpp": "0a727cb4cbf3ca09ca32bb4645edeaf86f5b886683405e93ee4eca1bf5017e26",
+    "client/app/src/rkmoon_audio_control.cpp": "d1a35e02e476799a482252766696a7b9276b9aab41d4f88735d57f8f73afc680",
+    "client/app/src/rkmoon_audio_control.h": "a918d44c9b941d8f2381853c903c2b0dd7a38cd9914c55d93ec74fca6fe20ed3",
+    "client/rkmoon-client.pro": "52422952f194bbf5f64686226c869ec39415c18b5aa60ebc292b3db56c168f4b",
+    "client/sources.lock.json": "dfbfb443e526404130d5ba20b542a1c857f32c716deae195f01c8d6af41e788b",
+    "client/tests/audio_gain.cpp": "750b31eb793e136a03b3ee583871ca6fed9fb85a07c473bb4e435f3daac2f279",
+    "client/tools/apply_moonlight.py": "334be1e407e11cbd9c564f6c1b5e1a12268fd2cc1fadb61073d3b030cdad7128",
+    "client/tools/fetch_client_sources.py": "c95c1b8d10a6dadc1d515e156e3c0c46c3ca4be3f8591267d31ae676801937a8",
+    "client/tools/test_client.py": "47c9cd699275eca618bab7eb9f08d14732fad184b4fe3ac5581b3673a2820944"
+  },
+  "note": "All app sources/project files here were transferred before the final Windows build. Later source fixes are not present in this package. Unit test sources are recorded separately from application behavior; artifact is internal only."
+}

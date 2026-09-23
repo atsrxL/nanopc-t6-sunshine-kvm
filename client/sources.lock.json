@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "component": "rkmoon-minimal-client",
+  "version": "0.1.0-dev",
+  "review_date": "2026-09-23",
+  "sources": {
+    "moonlight-qt": {
+      "url": "https://github.com/moonlight-stream/moonlight-qt.git",
+      "version": "v6.1.0",
+      "commit": "f786e94c7b2f943e24e65d7d74deb539b827fc84",
+      "license": "GPL-3.0-only",
+      "usage": "fixed upstream client; transport, decoder, renderer, pairing and input reused unmodified except the audited overlay patches"
+    }
+  },
+  "submodules_required": {
+    "moonlight-common-c/moonlight-common-c": "8599b6042a4ba27749b0f94134dd614b4328a9bc",
+    "moonlight-common-c/moonlight-common-c/enet": "bbf71856bb144729af4ed08af6bc2f5826a96db5",
+    "h264bitstream/h264bitstream": "34f3c58afa3c47b6cf0a49308a68cbf89c5e0bff",
+    "soundio/libsoundio": "34bbab80bd4034ba5080921b6ba6d61314126310",
+    "libs": "a27d6a7995ef504963fa9058c69e6ba1b449cc0f"
+  },
+  "submodules_not_fetched": {
+    "qmdnsengine/qmdnsengine": "b7a5a9f225d5e14b39f9fd1f905c4f505cf2ee99 (mDNS discovery removed from this client)",
+    "app/SDL_GameControllerDB": "e5a5fa2ac6e645d72c619ea99520a3a4586ee005 (gamepad support removed from this client)"
+  },
+  "limitations": [
+    "Pinning sources proves nothing about build success, hardware decode or interoperability; see client/docs/ACCEPTANCE.md for the tested/untested split.",
+    "libs submodule ships prebuilt SDL2/SDL2_ttf/FFmpeg/OpenSSL/Opus binaries for Windows and macOS from upstream; they are not rebuilt or audited here.",
+    "The combined binary remains GPL-3.0-only because upstream moonlight-qt is GPL-3.0-only."
+  ]
+}
