@@ -1,0 +1,13 @@
+{
+  "kernel_revision": "95e85f6cb496c75807c5b16f158853578e7e7d1b",
+  "original_source_sha256": "7035b4cc5159312134c3b172a55921f8f16e4cb6a1136626f4d1e381759be761",
+  "module_source_sha256": "508347b33d50c4ee69c3223ceec00b5b7993719a50a80f24e2800eee474bafbb",
+  "driver": "rkmoon-hdmirx-codec",
+  "rx_parent_compatibles": [
+    "rockchip,rk3588-hdmirx-ctrler",
+    "rockchip,hdmirx-ctrler"
+  ],
+  "exports": [],
+  "module_name": "rkmoon_hdmirx_codec",
+  "deployment": "manual driver_override, codec.5 only; never autoload or force-load"
+}
