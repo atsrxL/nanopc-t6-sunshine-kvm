@@ -1,0 +1,22 @@
+name: Linux build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline native and Python integration tests
+        run: tools/build.sh offline
+      - name: Address and undefined behavior sanitizers
+        run: |
+          cmake -S . -B build/asan -DRKMOON_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/asan -j2
+          ctest --test-dir build/asan --output-on-failure
+      - name: Fetch pinned MPP SDK
+        run: python3 tools/fetch_sources.py --component mpp
+      - name: Compile and link hardware worker against real SDK
+        run: tools/build.sh mpp
+      - name: Worker command line (no hardware access)
+        run: build/native/rkmoon-worker --help

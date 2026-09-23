@@ -1,0 +1,22 @@
+# User unit TEMPLATE. Replace both @...@ placeholders with verified absolute paths.
+# No [Install] section: intentionally not enable-able by default.
+[Unit]
+Description=Independent RK3588 HDMI to Moonlight KVM
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 @PROJECT_ROOT@/tools/run.py start --config @PRIVATE_CONFIG@
+ExecStopPost=/usr/bin/python3 @PROJECT_ROOT@/tools/systemd_release.py --config @PRIVATE_CONFIG@
+KillMode=control-group
+TimeoutStopSec=90
+Restart=no
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Do not use PrivateDevices: V4L2/MPP/DRM/dma_heap device ACLs must remain visible.
+# No automatic supplementary groups, root, setcap, gadget ownership, firewall rules or enable.

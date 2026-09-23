@@ -1,0 +1,8 @@
+[ 38%] Built target rkmoon_core
+[ 46%] Building CXX object CMakeFiles/rkmoon_capture.dir/src/capture.cpp.o
+[ 76%] Built target rkmoon-core-tests
+[ 76%] Built target rkmoon-hid-fixture
+[ 84%] Linking CXX static library librkmoon_capture.a
+[ 84%] Built target rkmoon_capture
+[ 92%] Linking CXX executable rkmoon-v4l2-probe
+[100%] Built target rkmoon-v4l2-probe

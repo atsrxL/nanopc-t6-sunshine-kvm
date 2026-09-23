@@ -1,0 +1,3 @@
+$ git ls-remote https://github.com/LizardByte/Sunshine.git HEAD
+fatal: unable to access 'https://github.com/LizardByte/Sunshine.git/': Could not resolve host: github.com
+exit=128

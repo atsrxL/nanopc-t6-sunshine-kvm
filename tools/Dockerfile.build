@@ -1,0 +1,12 @@
+# Isolated Linux compiler environment; never use this container as a privileged KVM runtime.
+FROM debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build python3 python3-jinja2 git ca-certificates \
+    pkg-config curl nodejs npm glslang-tools libcap-dev libcurl4-openssl-dev \
+    libdrm-dev libevdev-dev libgbm-dev libminiupnpc-dev libnuma-dev libopus-dev \
+    libpipewire-0.3-dev libpulse-dev libssl-dev libsystemd-dev libudev-dev \
+    libwayland-dev libx11-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb1-dev \
+    libxfixes-dev libxrandr-dev libxtst-dev libvulkan-dev libva-dev libgl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work
+CMD ["bash"]

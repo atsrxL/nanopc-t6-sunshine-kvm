@@ -1,0 +1,29 @@
+[
+  {
+    "argv": [
+      "python3",
+      "-m",
+      "compileall",
+      "-q",
+      "python",
+      "tools",
+      "tests"
+    ],
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "argv": [
+      "bash",
+      "-n",
+      "tools/build.sh"
+    ],
+    "exit": 0,
+    "stderr": ""
+  },
+  {
+    "check": "relative Markdown links",
+    "missing": [],
+    "exit": 0
+  }
+]

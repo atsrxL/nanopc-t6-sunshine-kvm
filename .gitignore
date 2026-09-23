@@ -1,0 +1,15 @@
+/build/
+/vendor/
+/local/
+/private/
+/runtime/
+__pycache__/
+*.pyc
+*.hevc
+*.h264
+*.mp4
+*.pem
+*.key
+*.p12
+*.secret.json
+/results/local/

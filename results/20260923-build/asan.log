@@ -1,0 +1,86 @@
+-- The CXX compiler identification is GNU 14.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /work/build/asan
+[  7%] Building CXX object CMakeFiles/rkmoon_core.dir/src/core.cpp.o
+[ 15%] Building CXX object CMakeFiles/rkmoon_core.dir/src/annexb.cpp.o
+[ 23%] Building CXX object CMakeFiles/rkmoon_core.dir/src/pixels.cpp.o
+[ 30%] Building CXX object CMakeFiles/rkmoon_core.dir/src/hid_client.cpp.o
+[ 38%] Linking CXX static library librkmoon_core.a
+[ 38%] Built target rkmoon_core
+[ 46%] Building CXX object CMakeFiles/rkmoon_capture.dir/src/capture.cpp.o
+[ 53%] Building CXX object CMakeFiles/rkmoon-core-tests.dir/tests/core_tests.cpp.o
+[ 61%] Building CXX object CMakeFiles/rkmoon-hid-fixture.dir/tests/hid_client_fixture.cpp.o
+[ 69%] Linking CXX executable rkmoon-hid-fixture
+[ 69%] Built target rkmoon-hid-fixture
+[ 76%] Linking CXX static library librkmoon_capture.a
+[ 76%] Built target rkmoon_capture
+[ 84%] Building CXX object CMakeFiles/rkmoon-v4l2-probe.dir/src/probe_main.cpp.o
+[ 92%] Linking CXX executable rkmoon-v4l2-probe
+[ 92%] Built target rkmoon-v4l2-probe
+[100%] Linking CXX executable rkmoon-core-tests
+[100%] Built target rkmoon-core-tests
+Internal ctest changing into directory: /work/build/asan
+Test project /work/build/asan
+      Start  1: wire_roundtrip
+ 1/25 Test  #1: wire_roundtrip ...................   Passed    0.01 sec
+      Start  2: wire_oversize
+ 2/25 Test  #2: wire_oversize ....................   Passed    0.01 sec
+      Start  3: wire_reserved
+ 3/25 Test  #3: wire_reserved ....................   Passed    0.01 sec
+      Start  4: wire_kind
+ 4/25 Test  #4: wire_kind ........................   Passed    0.01 sec
+      Start  5: wire_payload
+ 5/25 Test  #5: wire_payload .....................   Passed    0.01 sec
+      Start  6: wire_flags
+ 6/25 Test  #6: wire_flags .......................   Passed    0.00 sec
+      Start  7: config_valid
+ 7/25 Test  #7: config_valid .....................   Passed    0.01 sec
+      Start  8: config_invalid
+ 8/25 Test  #8: config_invalid ...................   Passed    0.01 sec
+      Start  9: h264_idr
+ 9/25 Test  #9: h264_idr .........................   Passed    0.00 sec
+      Start 10: hevc_idr
+10/25 Test #10: hevc_idr .........................   Passed    0.00 sec
+      Start 11: hevc_cra
+11/25 Test #11: hevc_cra .........................   Passed    0.01 sec
+      Start 12: missing_headers
+12/25 Test #12: missing_headers ..................   Passed    0.00 sec
+      Start 13: two_pictures
+13/25 Test #13: two_pictures .....................   Passed    0.00 sec
+      Start 14: bad_nal
+14/25 Test #14: bad_nal ..........................   Passed    0.01 sec
+      Start 15: sequence_bad
+15/25 Test #15: sequence_bad .....................   Passed    0.01 sec
+      Start 16: sequence_good
+16/25 Test #16: sequence_good ....................   Passed    0.01 sec
+      Start 17: pixel_black
+17/25 Test #17: pixel_black ......................   Passed    0.01 sec
+      Start 18: pixel_white
+18/25 Test #18: pixel_white ......................   Passed    0.01 sec
+      Start 19: pixel_stride
+19/25 Test #19: pixel_stride .....................   Passed    0.00 sec
+      Start 20: pixel_bounds
+20/25 Test #20: pixel_bounds .....................   Passed    0.01 sec
+      Start 21: direct_layout
+21/25 Test #21: direct_layout ....................   Passed    0.01 sec
+      Start 22: ipc_roundtrip
+22/25 Test #22: ipc_roundtrip ....................   Passed    0.00 sec
+      Start 23: ipc_eof
+23/25 Test #23: ipc_eof ..........................   Passed    0.01 sec
+      Start 24: ipc_deadline
+24/25 Test #24: ipc_deadline .....................   Passed    0.03 sec
+      Start 25: child_spawn
+25/25 Test #25: child_spawn ......................   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 25
+
+Total Test time (real) =   0.17 sec
