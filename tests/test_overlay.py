@@ -7,7 +7,7 @@ p=Path(__file__).resolve().parents[1]/'tools/apply_sunshine.py'
 spec=importlib.util.spec_from_file_location('apply_sunshine',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class OverlayTests(unittest.TestCase):
     def test_platform_sources_can_find_bridge_header(self):
-        cmake=m.make_changes({'CMakeLists.txt':'# target definitions\n'})['CMakeLists.txt']
+        cmake=m.make_changes({'CMakeLists.txt':'# setup compile definitions\n# target definitions\n'})['CMakeLists.txt']
         self.assertIn('"${CMAKE_CURRENT_SOURCE_DIR}"',cmake)
         self.assertNotIn('"${CMAKE_CURRENT_SOURCE_DIR}/src"',cmake)
         self.assertIn('"${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/include"',cmake)
@@ -36,6 +36,10 @@ class OverlayTests(unittest.TestCase):
         r=m.make_changes({'cmake/targets/common.cmake':s})['cmake/targets/common.cmake']
         self.assertNotIn('find_program(NPM',r)
         self.assertIn('# docs',r)
+    def test_no_desktop_capture_backend_is_required(self):
+        fixture='if(NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}'
+        changed=m.make_changes({'cmake/compile_definitions/linux.cmake':fixture})['cmake/compile_definitions/linux.cmake']
+        self.assertIn('if(NOT RKMOON_MINIMAL_BUILD AND NOT ${CUDA_FOUND}',changed)
     def test_no_desktop_platform_init(self):
         fixture='// local includes\n  std::unique_ptr<deinit_t> init() {\noriginal();\n}\n'
         changed=m.make_changes({'src/platform/linux/misc.cpp':fixture})['src/platform/linux/misc.cpp']

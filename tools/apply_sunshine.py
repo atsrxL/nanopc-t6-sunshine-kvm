@@ -37,7 +37,7 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/nvhttp.h"}:
+        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/nvhttp.h", "cmake/compile_definitions/linux.cmake"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
         if path=="src/video.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
@@ -119,11 +119,15 @@ def make_changes(original):
 
 """
             text=once(text,anchor,methods+anchor)
+        elif path=="cmake/compile_definitions/linux.cmake":
+            text=once(text,"if(NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}",
+                "if(NOT RKMOON_MINIMAL_BUILD AND NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}")
         elif path=="cmake/targets/common.cmake":
             start=text.index("#WebUI build\n")
             end=text.index("# docs\n",start)
             text=text[:start]+"# No NPM/Web UI target in this dedicated build.\n\n"+text[end:]
         elif path=="CMakeLists.txt":
+            text=once(text,"# setup compile definitions\n", "set(RKMOON_MINIMAL_BUILD ON) # Explicit external HDMI/MPP path; no desktop capture backend.\n# setup compile definitions\n")
             text=once(text,"# target definitions\n",'''# Only the GameStream host and RTSP network service; no Web UI, UPnP or desktop entrypoint.
 list(REMOVE_ITEM SUNSHINE_TARGET_FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
@@ -156,7 +160,7 @@ set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/thread_safe.h","cmake/targets/common.cmake","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
