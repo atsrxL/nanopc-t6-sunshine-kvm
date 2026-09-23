@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 最小服务分支 `feat/minimal-kvm-server` 在独立目录开发，**不代表下述旧 main 验收已迁移**。已改为专用 `rkmoon-kvm` 无 WebUI/npm 主入口，保留 Sunshine GameStream 配对/RTSP/RTP/FEC/认证加密输入、固定 HDMI 应用；本地 0700/0600 Unix PIN CLI；显式 ALSA HDMI stereo 48k→Opus，缺源实时静音，断开重试。完整编译/真实硬件/客户端音画仍需按 `docs/ACCEPTANCE.md` 单独标记。构建 VM301 是 x86_64 客体跑 arm64 QEMU 容器，不是 T6 原生测试。详见 `docs/ADR-002-minimal-service.md`；不要在旧 VNC 项目部署/覆盖。
+
 > 实机更新：ARM64 worker/Sunshine 已构建；T6 真实 1080p60 HEVC/H264 各 60 秒及独立解码通过；原版 Moonlight HEVC 硬解超过 11 分钟、H264 重连通过。USB 尚未完成。见 [T6 验收记录](results/20260923-t6/STATUS.md)。
 
 > 2026-09-23 本地更新：完整 Sunshine 与真实 MPP worker 已在 Linux amd64 编译链接通过；25 原生、69 Python/联合、25 sanitizer 测试通过。目标 ARM64/P1/P2/P3 仍未测试。最新结果见 [构建记录](results/20260923-build/STATUS.md)。下文原交接记录保留供追溯。

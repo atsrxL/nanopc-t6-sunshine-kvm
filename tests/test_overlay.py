@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import subprocess
 p=Path(__file__).resolve().parents[1]/'tools/apply_sunshine.py'
 spec=importlib.util.spec_from_file_location('apply_sunshine',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class OverlayTests(unittest.TestCase):
@@ -49,7 +50,8 @@ class OverlayTests(unittest.TestCase):
         source=(Path(__file__).resolve().parents[1]/'vendor/sunshine/src/nvhttp.cpp')
         # Fixture is the pinned source, not a fuzzy patch of an unknown version.
         if source.exists():
-            changed=m.make_changes({'src/nvhttp.cpp':source.read_text()})['src/nvhttp.cpp']
+            original=subprocess.check_output(['git','-C',str(source.parents[1]),'show',m.PIN+':src/nvhttp.cpp'],text=True)
+            changed=m.make_changes({'src/nvhttp.cpp':original})['src/nvhttp.cpp']
             self.assertIn('stop.stop_requested()',changed)
             self.assertIn('std::chrono::seconds(30)',changed)
     def test_rtsp_admission_precedes_allocation(self):
