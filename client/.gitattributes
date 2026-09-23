@@ -1,3 +1,6 @@
 # Preserve verbatim upstream legal text and recorded unified diffs.
 licenses/* -whitespace
 results/**/*.patch -whitespace
+# Downloaded build records retain their original Windows CRLF bytes.
+results/**/*.json whitespace=cr-at-eol
+results/**/*.txt whitespace=cr-at-eol
