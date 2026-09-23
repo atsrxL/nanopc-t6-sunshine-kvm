@@ -4,6 +4,8 @@
 
 ## 当前验证状态
 
+最小服务端冻结 **912613c** 已完成 ARM64 QEMU 完整链接、25原生+87工具/联合测试、合成音频loop与无Web启动检查；[runtime/hash及边界](results/20260923-minimal/STATUS.md)。真实HDMI声音/定制客户端验收未完成，不能使用合成测试替代。
+
 2026-09-23 已完成 Linux amd64 和 ARM64 全量构建，T6 原生 1080p60 HEVC Main8 / H.264 Baseline 各 60 秒采集及独立解码。原版 macOS Moonlight 6.1.0 已配对并显示真实 HDMI，HEVC 使用 VideoToolbox 硬解与 Metal 渲染。持续连接和重连的最终结果见 [T6 验收记录](results/20260923-t6/STATUS.md)。
 
 以上视频数据属于旧 `main` 基线；其 P3 相对 USB 已完成混合事件观察但异常释放等场景未全验收。`feat/minimal-kvm-server` 新 binary、真实 HDMI 声音与定制客户端均需另验，不可借用旧结果称已完成。
