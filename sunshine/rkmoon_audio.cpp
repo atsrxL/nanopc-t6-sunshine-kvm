@@ -39,10 +39,10 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
     shutdown->view();
     return;
   }
-  int error = 0;
-  Encoder encoder(opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_LOWDELAY, &error));
+  int opus_status = 0;
+  Encoder encoder(opus_encoder_create(48000, 2, OPUS_APPLICATION_RESTRICTED_LOWDELAY, &opus_status));
   const int bitrate = config.flags[audio::config_t::HIGH_QUALITY] ? 512000 : 96000;
-  if (!encoder || error != OPUS_OK ||
+  if (!encoder || opus_status != OPUS_OK ||
       opus_encoder_ctl(encoder.get(), OPUS_SET_BITRATE(bitrate)) != OPUS_OK ||
       opus_encoder_ctl(encoder.get(), OPUS_SET_VBR(0)) != OPUS_OK) {
     BOOST_LOG(error) << "RKMoon Opus encoder initialization failed";
