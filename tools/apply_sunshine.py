@@ -152,7 +152,7 @@ target_include_directories(sunshine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/include")
 find_library(RKMOON_ALSA_LIB asound REQUIRED)
-target_link_libraries(sunshine PRIVATE "${RKMOON_ALSA_LIB}")
+target_link_libraries(sunshine "${RKMOON_ALSA_LIB}")
 set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
 '''
         else:
