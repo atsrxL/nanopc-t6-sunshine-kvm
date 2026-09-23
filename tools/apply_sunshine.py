@@ -71,6 +71,9 @@ def make_changes(original):
         elif path=="src/audio.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
                 "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
+        elif path=="src/httpcommon.cpp":
+            text=once(text,'      BOOST_LOG(info) << "Open the Web UI to set your new username and password and getting started";',
+                '      BOOST_LOG(info) << "RKMoon local PIN approval uses the private admin socket; no Web UI";')
         elif path=="src/nvhttp.h":
             text=once(text,"#include <string_view>\n", "#include <string_view>\n#include <stop_token>\n")
             text=once(text,"  bool pin(std::string_view pairing_id, std::string pin, std::string name);",
@@ -188,7 +191,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src_assets/common/assets/box.png"
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/httpcommon.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
