@@ -43,6 +43,7 @@ void Capture::query() {
   else throw std::runtime_error("v1 only accepts one-plane native NV12/BGR24; do not auto S_FMT");
   layout.transfer=(format_.xfer_func==V4L2_XFER_FUNC_SRGB || (format_.xfer_func==V4L2_XFER_FUNC_DEFAULT&&format_.colorspace==V4L2_COLORSPACE_SRGB))?13:1;
   layout.full_range=layout.pixels==Pixels::nv12&&format_.quantization==V4L2_QUANTIZATION_FULL_RANGE;
+  layout.rgb_limited=layout.pixels==Pixels::bgr24&&format_.quantization==V4L2_QUANTIZATION_LIM_RANGE;
 }
 void Capture::describe() const {
   std::cerr<<"{\"kind\":\"capture_format\",\"width\":"<<layout.width<<",\"height\":"<<layout.height
@@ -62,7 +63,6 @@ void Capture::validate(const Config& c) const {
   auto enc=format_.ycbcr_enc;
   if(enc==V4L2_YCBCR_ENC_DEFAULT) enc=V4L2_MAP_YCBCR_ENC_DEFAULT(format_.colorspace);
   if(layout.pixels==Pixels::nv12 && enc!=V4L2_YCBCR_ENC_709) throw std::runtime_error("v1 NV12 requires BT709 matrix");
-  if(layout.pixels==Pixels::bgr24&&format_.quantization==V4L2_QUANTIZATION_LIM_RANGE) throw std::runtime_error("limited-range BGR is not implemented");
   // No hidden chroma offset/padding heuristic. Only the explicitly packed layout is accepted.
   uint64_t bytes=uint64_t(layout.stride)*layout.height*(layout.pixels==Pixels::nv12?3:2)/2;
   if(layout.stride<uint64_t(layout.width)*(layout.pixels==Pixels::bgr24?3:1)||bytes!=layout.sizeimage) throw std::runtime_error("ambiguous packed plane layout/sizeimage");
