@@ -21,7 +21,11 @@ class Refused(RuntimeError):pass
 def load(path):
     c=json.loads(path.read_text())
     expected={'schema','sunshine_binary','worker_binary','state_directory','capture_device','capture_ownership_authorized','allow_cpu_pixel_copy','allow_high_resolution','input'}
-    if set(c)!=expected or c['schema']!=1:raise Refused('unknown/missing configuration fields')
+    if set(c) not in (expected,expected|{'audio'}) or c['schema']!=1:raise Refused('unknown/missing configuration fields')
+    audio=c.get('audio',{'enabled':False,'alsa_device':''})
+    if not isinstance(audio,dict) or set(audio)!={'enabled','alsa_device'} or type(audio['enabled']) is not bool or not isinstance(audio['alsa_device'],str):raise Refused('invalid HDMI audio configuration')
+    if audio['enabled'] and (not audio['alsa_device'].startswith(('hw:','plughw:')) or len(audio['alsa_device'])>128 or any(ch in audio['alsa_device'] for ch in '\\r\\n\\x00')):raise Refused('explicit hw:/plughw: HDMI capture device required (never default microphone)')
+    c['audio']=audio
     for k in ['capture_ownership_authorized','allow_cpu_pixel_copy','allow_high_resolution']:
         if type(c[k]) is not bool:raise Refused('configuration booleans must be true/false')
     i=c['input']
@@ -54,7 +58,7 @@ def prepare(c,state):
     envroot=state/'xdg';envroot.mkdir(mode=0o700,exist_ok=True)
     app={'env':{},'apps':[{'name':'HDMI','cmd':'','image-path':''}]}
     content={'apps.json':json.dumps(app,indent=2)+'\n',
-        'sunshine.conf':f'sunshine_name = NanoPC-T6 HDMI KVM\nupnp = disabled\nmin_log_level = 2\norigin_web_ui_allowed = pc\nfile_apps = {state}/apps.json\n'}
+        'sunshine.conf':f'sunshine_name = NanoPC-T6 HDMI KVM\nupnp = disabled\nmin_log_level = 2\nfile_apps = {state}/apps.json\n'}
     for name,text in content.items():
         p=state/name
         if p.is_symlink():raise Refused('configuration symlink refused')
@@ -92,6 +96,9 @@ def base_env(c,state):
     e.update(RKMOON_WORKER=c['worker_binary'],RKMOON_VIDEO_DEVICE=c['capture_device'],RKMOON_CAPTURE_AUTHORIZED='1',
         RKMOON_ALLOW_COPY=str(int(c['allow_cpu_pixel_copy'])),RKMOON_ALLOW_HIGH_RES=str(int(c['allow_high_resolution'])))
     e.pop('RKMOON_HID_SOCKET',None)
+    e.pop('RKMOON_AUDIO_DEVICE',None)
+    e['RKMOON_ADMIN_SOCKET']=str(state/'admin.sock')
+    if c['audio']['enabled']:e['RKMOON_AUDIO_DEVICE']=c['audio']['alsa_device']
     if c['input']['enabled']:e['RKMOON_HID_SOCKET']=str(state/'hid.sock')
     return e
 
@@ -119,7 +126,7 @@ def start(c,state):
     if not c['capture_ownership_authorized']:raise Refused('capture ownership has not been granted; no child/device opened')
     executable(c['sunshine_binary'],MARKER);executable(c['worker_binary'])
     if c['input']['enabled'] and not c['input']['exclusive_hid_authorized']:raise Refused('HID exclusivity not granted')
-    envroot=prepare(c,state);check_ports();env=base_env(c,state)
+    envroot=prepare(c,state);check_ports();stale_socket(state/'admin.sock');env=base_env(c,state)
     children=[];logs=[];stopping=False;failed=False;hid_started=False
     def spawn(args,logname):
         log=(state/logname).open('ab',buffering=0);logs.append(log)
@@ -140,7 +147,7 @@ def start(c,state):
                 if hid.poll() is not None or stopping or time.monotonic()>deadline:raise Refused('HID bridge did not become ready; inspect sanitized local log')
                 time.sleep(.05)
         sunshine=spawn([c['sunshine_binary'],str(state/'sunshine.conf')],'sunshine.log')
-        print('RKMoon foreground supervisor started. Pair via localhost HTTPS web UI on port 47990; Ctrl+C or tools/run.py stop --config ... stops this instance.',flush=True)
+        print('RKMoon minimal host started; no Web UI. Approve pairing via tools/admin.py in this private state. Ctrl+C stops this instance.',flush=True)
         while not stopping:
             if any(p.poll() is not None for p in children):failed=True;break
             time.sleep(.1)

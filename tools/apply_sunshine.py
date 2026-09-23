@@ -37,7 +37,7 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt"}:
+        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
         if path=="src/video.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
@@ -63,7 +63,7 @@ def make_changes(original):
                 text=at_entry(text,signature,"    if (rkmoon_sunshine::enabled()) { "+call+" return; }\n")
         elif path=="src/audio.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
-                "    if (rkmoon_sunshine::enabled()) { mail->event<bool>(mail::shutdown)->view(); return; } // Explicit no-audio strategy; not HDMI audio.\n")
+                "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
         elif path=="src/rtsp.cpp":
             anchor="    auto stream_session = stream::session::alloc(config, session);\n"
             text=once(text,anchor,"""    // RKMoon admission occurs AFTER upstream parsing/encryption validation and BEFORE input allocation.
@@ -93,7 +93,19 @@ def make_changes(original):
 
 """
             text=once(text,anchor,methods+anchor)
+        elif path=="cmake/targets/common.cmake":
+            start=text.index("#WebUI build\n")
+            end=text.index("# docs\n",start)
+            text=text[:start]+"# No NPM/Web UI target in this dedicated build.\n\n"+text[end:]
         elif path=="CMakeLists.txt":
+            text=once(text,"# target definitions\n",'''# Only the GameStream host and RTSP network service; no Web UI, UPnP or desktop entrypoint.
+list(REMOVE_ITEM SUNSHINE_TARGET_FILES
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/confighttp.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/upnp.cpp")
+list(APPEND SUNSHINE_TARGET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_main.cpp")
+# target definitions
+''')
             text+='''
 # RKMoon dedicated HDMI build. Do not install over a pre-existing Sunshine.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -101,19 +113,24 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 target_sources(sunshine PRIVATE
   src/rkmoon/rkmoon_bridge.cpp
+  src/rkmoon/rkmoon_audio.cpp
+  src/rkmoon/rkmoon_admin.cpp
   src/rkmoon/core.cpp
   src/rkmoon/annexb.cpp
   src/rkmoon/hid_client.cpp)
 target_include_directories(sunshine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/include")
+find_library(RKMOON_ALSA_LIB asound REQUIRED)
+target_link_libraries(sunshine PRIVATE "${RKMOON_ALSA_LIB}")
+set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
 '''
         else:
             raise PatchError("unexpected source file")
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/audio.cpp","src/rtsp.cpp","src/thread_safe.h","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/audio.cpp","src/rtsp.cpp","src/thread_safe.h","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
@@ -139,7 +156,7 @@ def main():
         stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
         try:
             payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
+            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
             shutil.copytree(ROOT/"include",payload/"include")
             shutil.copy2(ROOT/"LICENSE",payload/"LICENSE")
