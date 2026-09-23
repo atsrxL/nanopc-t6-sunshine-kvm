@@ -1,0 +1,12 @@
+********* Start testing of ClientUiTest *********
+Config: Using QtTest library 6.8.3, Qt 6.8.3 (x86_64-little_endian-llp64 shared (dynamic) release build; by MSVC 2022), windows 11
+PASS   : ClientUiTest::initTestCase()
+PASS   : ClientUiTest::redactedHttpLogs()
+PASS   : ClientUiTest::modifiersAndKeyRelease()
+PASS   : ClientUiTest::fixedRelativeAndHardwarePolicy()
+QWARN  : ClientUiTest::pairingReentryAndCloseGuard() QFontDatabase: Cannot find font directory D:/Build/work/rkmoon-client-9004/Qt/6.8.3/msvc2022_64/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+PASS   : ClientUiTest::pairingReentryAndCloseGuard()
+PASS   : ClientUiTest::cleanupTestCase()
+Totals: 6 passed, 0 failed, 0 skipped, 0 blacklisted, 15ms
+********* Finished testing of ClientUiTest *********

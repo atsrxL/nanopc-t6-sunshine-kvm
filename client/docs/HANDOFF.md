@@ -22,9 +22,23 @@ Current critical invariants:
 - First exported evaluation ZIP is unsafe for pairing/streaming and is retained only
   as offline build evidence; exact hash + input manifest are in ACCEPTANCE.md.
 
-Next: commit reviewed sources, same-task VM9004 resume with locked lifecycle/lineage
-checks, build that exact revision, run offline tests, export a newly named package
-with source/binary manifest and SMB readback, close lease and stop/refresh 24h guard.
-Do not reuse source-template VM200, VM301 or user's .180 desktop. T6 HDMI/audio/input
-and Windows GPU acceptance await parent-coordinated integration after server ARM64
-build. Licensing/source-offer gaps remain a public-release blocker.
+Reviewed source commit **b9c273b299e0c906a846b63eea854d2f30b5ba4a** is built on
+Windows x64 Qt6.8.3/MSVC2022; offline QtTest6/6, gain assertions and packaged4s
+clean-PATH offscreen smoke passed. New reviewed ZIP/evidence and exact hashes are
+in ACCEPTANCE.md; source inputs map back to that commit. This later documentation
+commit does not change the binary's source identity. VM9004 stopped, lease closed,
+controller key material removed; final guard deadline **2026-09-24 21:58:01 CST**.
+
+Next: parent-coordinated actual host PIN approval, HEVC/H.264 GPU decoding, HDMI audio
+A/V sync/source recovery, USB input and disconnect release. Do not start VM200,
+borrow VM301 or operate the user's .180 desktop without the integration window.
+No live KVM endpoint was used by this client task. Licensing/source-offer gaps remain
+a public-release blocker; initial evaluation ZIP remains offline-only evidence.
+
+Known UX limitation for follow-up: upstream get-server-cert pairing request uses no
+client timeout while waiting for operator approval. This frontend blocks reentry and
+normal window close during that worker; it does not yet expose pairing cancellation.
+Do not call operator-timeout/cancel recovery validated. Audio renderer retry remains
+upstream (200 packets, so wall-clock retry interval depends on negotiated frame size).
+The hardware integration should test operator absence, wrong PIN, and 5/10/20ms audio
+recovery separately rather than infer them from unit/offscreen tests.

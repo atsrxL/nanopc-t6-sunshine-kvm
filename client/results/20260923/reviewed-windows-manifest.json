@@ -1,0 +1,28 @@
+{
+  "binary_size": 606208,
+  "project_commit": "b9c273b299e0c906a846b63eea854d2f30b5ba4a",
+  "qt": "6.8.3",
+  "configuration": "Windows x64 MSVC2022 release",
+  "overlay_sha256": "6e7e0f7d90c421594575d65450b35e7674e5a29ac0fe9895c2551f581405e651",
+  "binary_sha256": "806ced4903f8c9d5bd290eb9fa4be2b11760b5d1acba797ce2dfc34bc99fe554",
+  "inputs": {
+    "client/app/src/rkmoon_http_log.h": "769d5a0cd70d7c7c0421105d41d0794775f890908ab7309d29faaa501dd4d7e5",
+    "client/app/src/kvmconfig.h": "3d699cc0976dc636b84d99978ea3b75ae0ae4ac93b8c5af4a162b9b1bc8fd1c0",
+    "client/app/src/kvmwindow.cpp": "59d212fc6e76d9801eac104ae232430a46d4a59c798290c0a93bc860f7c7fe38",
+    "client/app/src/kvmhost.cpp": "7a7c40b4eae74ec755071b9886a3acbe04336e94a132ca371c42b62120c13889",
+    "client/app/src/rkmoon_audio_keys.cpp": "e5c965feb13506e48382588610749a8687cb12018533d153a0a0dbfd5bc99695",
+    "client/app/src/kvmhost.h": "3a4426ba8c3ba339d5d51d1c712bd0b11dbf08eed9c510abc517ed482c041e44",
+    "client/app/rkmoon.qrc": "708de64c9ce05d692b105a3321d8ade2e4ad3a7bed2ebda22f6da136a7365383",
+    "client/app/src/rkmoon_audio_control.cpp": "e02712587e9154c8c397961c1adcf4f58d282303d3df59bdad93b7cc9e56829e",
+    "client/app/src/rkmoon_audio_control.h": "97ef3275cfcb9a4132903dd73a1fa597297464788be4bf43b4738863a82cd567",
+    "client/app/src/kvmwindow.h": "81013eb45954607d9449e55ee2e915fe7ab9f5ae1673335dbd63de6e664dee86",
+    "client/app/src/main.cpp": "173c808ce0bdfcd7654d6fdffa06f67d9451d7a55c2c13ee79898b9905145ab1",
+    "client/app/src/kvmconfig.cpp": "3f3ea268d383788ad0cd1f6068eba3bc91563a046af28b2a16d58b2a6b82770f",
+    "client/app/src/nogamepad.cpp": "0aeb4d72fb0e1509af5d78c7eaa175d7f4301e97ae00ce24c8686f4188cb0f22",
+    "client/app/rkmoon-app.pro": "33c8cfa2033b876f24e0c6bafc9601f62781485f7f9913441fa78c67c8ccd260",
+    "client/app/src/rkmoon_audio_keys.h": "a460b3ecdba2fa34b660ad4d1c5eb27446e4efaf87be50e2ccdd340fb9149e7b",
+    "client/app/src/nocompat.cpp": "12ab6559d11354bbd55b5b95f59b62cd7dda4bd0d3314e94e9b5a641879c42af"
+  },
+  "live_stream_tested": false,
+  "schema": 1
+}

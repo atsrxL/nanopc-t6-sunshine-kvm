@@ -1,0 +1,3 @@
+# Preserve verbatim upstream legal text and recorded unified diffs.
+licenses/* -whitespace
+results/**/*.patch -whitespace
