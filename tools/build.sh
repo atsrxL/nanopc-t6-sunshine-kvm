@@ -31,11 +31,14 @@ case ${1:-offline} in
     cmake -S "$SRC" -B "$BUILD_ROOT/sunshine" -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DBUILD_DOCS=OFF -DBUILD_TESTS=OFF -DSUNSHINE_ENABLE_TRAY=OFF \
       -DSUNSHINE_ENABLE_CUDA=OFF -DCUDA_FAIL_ON_MISSING=OFF -DBOOST_USE_STATIC=OFF \
+      -DSUNSHINE_ENABLE_DRM=OFF -DSUNSHINE_ENABLE_VAAPI=OFF -DSUNSHINE_ENABLE_VULKAN=OFF \
+      -DSUNSHINE_ENABLE_WAYLAND=OFF -DSUNSHINE_ENABLE_X11=OFF \
+      -DSUNSHINE_ENABLE_KWIN=OFF -DSUNSHINE_ENABLE_PORTAL=OFF \
       -DSUNSHINE_ASSETS_DIR_DEF="$BUILD_ROOT/sunshine/assets" \
       -DCMAKE_INSTALL_PREFIX="$PREFIX/sunshine" "${@:2}"
-    cmake --build "$BUILD_ROOT/sunshine" -j "$JOBS"
+    cmake --build "$BUILD_ROOT/sunshine" --target sunshine -j "$JOBS"
     # Do not run upstream cmake --install: it can include system integration/permissions.
-    echo "Built in $BUILD_ROOT/sunshine. Run that binary with its build assets; do not install over old Sunshine."
+    echo "Dedicated binary: $BUILD_ROOT/sunshine/rkmoon-kvm. No web-ui target; do not install over old Sunshine."
     ;;
   *) echo 'Usage: tools/build.sh offline|mpp|sunshine [additional Sunshine -D options]' >&2;exit 2;;
 esac

@@ -37,13 +37,15 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt"}:
+        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/nvhttp.h", "cmake/compile_definitions/linux.cmake"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
         if path=="src/video.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
                 "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::capture(std::move(mail), config, channel_data); return; }\n")
             text=at_entry(text,"  int probe_encoders()", "    if (rkmoon_sunshine::enabled()) { return rkmoon_sunshine::probe(); }\n")
         elif path=="src/input.cpp":
+            text=at_entry(text,"  void print(void *payload)",
+                "    if (rkmoon_sunshine::enabled()) { return; } // Never log decoded input, even at verbose.\n")
             text=at_entry(text,"  inline int apply_shortcut(short keyCode)","    if (rkmoon_sunshine::enabled()) { return 0; } // Send shortcuts to the USB host, not T6.\n")
         elif path=="src/platform/virtualhid_input.cpp":
             text=at_entry(text,"  std::unique_ptr<lvh::Runtime> create_runtime(lvh::BackendKind backend)",
@@ -61,10 +63,59 @@ def make_changes(original):
             }
             for signature,call in calls.items():
                 text=at_entry(text,signature,"    if (rkmoon_sunshine::enabled()) { "+call+" return; }\n")
+        elif path=="src/platform/linux/misc.cpp":
+            text=at_entry(text,"  fs::path appdata()",
+                '    if (rkmoon_sunshine::enabled()) { auto base = fs::path(lizardbyte::common::get_env("XDG_CONFIG_HOME")); return base.is_absolute() ? base / "sunshine" : fs::path("/nonexistent/rkmoon-private-state-required"); } // Never migrate an installed Sunshine state.\n')
+            text=at_entry(text,"  std::unique_ptr<deinit_t> init()",
+                "    if (rkmoon_sunshine::enabled()) { return std::make_unique<deinit_t>(); } // No EGL/desktop capture initialization.\n")
         elif path=="src/audio.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
-                "    if (rkmoon_sunshine::enabled()) { mail->event<bool>(mail::shutdown)->view(); return; } // Explicit no-audio strategy; not HDMI audio.\n")
+                "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
+        elif path=="src/httpcommon.cpp":
+            text=once(text,'      BOOST_LOG(info) << "Open the Web UI to set your new username and password and getting started";',
+                '      BOOST_LOG(info) << "RKMoon local PIN approval uses the private admin socket; no Web UI";')
+        elif path=="src/nvhttp.h":
+            text=once(text,"#include <string_view>\n", "#include <string_view>\n#include <stop_token>\n")
+            text=once(text,"  bool pin(std::string_view pairing_id, std::string pin, std::string name);",
+                "  bool pin(std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop = {});")
+        elif path=="src/nvhttp.cpp":
+            text=at_entry(text,"  void print_req(std::shared_ptr<typename SimpleWeb::ServerBase<T>::Request> request)",
+                '    if (rkmoon_sunshine::enabled()) { BOOST_LOG(debug) << "RKMoon GameStream request (content redacted)"; return; }\n')
+            text=once(text,'    BOOST_LOG(debug) << sess.client.cert;',
+                '    BOOST_LOG(debug) << "RKMoon pairing certificate received (redacted)";')
+            text=once(text,'        BOOST_LOG(debug) << subject_name << " -- "sv << (verified ? "verified"sv : "denied"sv);',
+                '        BOOST_LOG(debug) << "Client certificate " << (verified ? "verified"sv : "denied"sv);')
+            text=once(text,"  bool pin(const std::string_view pairing_id, std::string pin, std::string name) {",
+                "  bool pin(const std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop) {")
+            text=once(text,"completion_deadline = std::min(sess.async_insert_pin.expires_at, now + config::stream.ping_timeout);",
+                "completion_deadline = std::min({sess.async_insert_pin.expires_at, now + config::stream.ping_timeout, now + std::chrono::seconds(30)});")
+            text=once(text,"""      if (completion->condition.wait_until(lock, completion_deadline, [&completion]() {
+            return completion->result.has_value();
+          })) {
+        return *completion->result;
+      }
+""","""      // Bounded wait so SIGTERM cannot stall the admin socket worker for
+      // an operator-configured multi-minute ping_timeout.
+      while (!stop.stop_requested() && std::chrono::steady_clock::now() < completion_deadline) {
+        if (completion->condition.wait_until(lock, std::min(completion_deadline,
+              std::chrono::steady_clock::now() + std::chrono::milliseconds(100)), [&completion]() {
+              return completion->result.has_value();
+            })) return *completion->result;
+      }
+""")
+        elif path=="src/stream.cpp":
+            text=once(text,'        << util::hex_vec(payload) << std::endl',
+                '        << "[RKMoon control payload redacted]" << std::endl')
+            for kind in ('ping [v2]', 'ping [v1]', 'non-ping'):
+                old='        BOOST_LOG(debug) << "Received '+kind+' from "sv << recv_peer.address() << \':\' << recv_peer.port() << " ["sv << util::hex_vec(msg) << \']\';'
+                new='        BOOST_LOG(debug) << "Received '+kind+' (payload redacted)";'
+                text=once(text,old,new)
         elif path=="src/rtsp.cpp":
+            # Keep sizes/status but never log SDP/options/raw request or response.
+            text=at_entry(text,"  void print_msg(PRTSP_MESSAGE msg)",
+                '    if (rkmoon_sunshine::enabled()) { BOOST_LOG(debug) << "RKMoon RTSP message (content redacted)"; return; }\n')
+            text=once(text,'          BOOST_LOG(debug) << "Found Host: "sv << content;',
+                '          BOOST_LOG(debug) << "Found RTSP Host header (redacted)";')
             anchor="    auto stream_session = stream::session::alloc(config, session);\n"
             text=once(text,anchor,"""    // RKMoon admission occurs AFTER upstream parsing/encryption validation and BEFORE input allocation.
     if (rkmoon_sunshine::enabled()) {
@@ -93,7 +144,23 @@ def make_changes(original):
 
 """
             text=once(text,anchor,methods+anchor)
+        elif path=="cmake/compile_definitions/linux.cmake":
+            text=once(text,"if(NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}",
+                "if(NOT RKMOON_MINIMAL_BUILD AND NOT ${CUDA_FOUND}\n        AND NOT ${LIBDRM_FOUND}")
+        elif path=="cmake/targets/common.cmake":
+            start=text.index("#WebUI build\n")
+            end=text.index("# docs\n",start)
+            text=text[:start]+"# No NPM/Web UI target in this dedicated build.\n\n"+text[end:]
         elif path=="CMakeLists.txt":
+            text=once(text,"# setup compile definitions\n", "set(RKMOON_MINIMAL_BUILD ON) # Explicit external HDMI/MPP path; no desktop capture backend.\nset(SUNSHINE_ASSETS_DIR_DEF assets) # Main anchors cwd to this binary directory.\n# setup compile definitions\n")
+            text=once(text,"# target definitions\n",'''# Only the GameStream host and RTSP network service; no Web UI, UPnP or desktop entrypoint.
+list(REMOVE_ITEM SUNSHINE_TARGET_FILES
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/confighttp.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/upnp.cpp")
+list(APPEND SUNSHINE_TARGET_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/rkmoon_main.cpp")
+# target definitions
+''')
             text+='''
 # RKMoon dedicated HDMI build. Do not install over a pre-existing Sunshine.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -101,19 +168,30 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 target_sources(sunshine PRIVATE
   src/rkmoon/rkmoon_bridge.cpp
+  src/rkmoon/rkmoon_audio.cpp
+  src/rkmoon/rkmoon_admin.cpp
   src/rkmoon/core.cpp
   src/rkmoon/annexb.cpp
   src/rkmoon/hid_client.cpp)
 target_include_directories(sunshine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/include")
+find_library(RKMOON_ALSA_LIB asound REQUIRED)
+target_link_libraries(sunshine "${RKMOON_ALSA_LIB}")
+set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
+# Only compatibility defaults/artwork, never the Web UI tree.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/assets")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/rkmoon/hdmi-apps.json"
+  "${CMAKE_CURRENT_BINARY_DIR}/assets/apps.json" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src_assets/common/assets/box.png"
+  "${CMAKE_CURRENT_BINARY_DIR}/assets/box.png" COPYONLY)
 '''
         else:
             raise PatchError("unexpected source file")
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/audio.cpp","src/rtsp.cpp","src/thread_safe.h","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/httpcommon.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/stream.cpp","src/thread_safe.h","cmake/compile_definitions/linux.cmake","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
@@ -139,8 +217,9 @@ def main():
         stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
         try:
             payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
+            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp","rkmoon_admin_io.hpp","rkmoon_audio_pcm.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
+            shutil.copy2(ROOT/"config/hdmi-apps.json",payload/"hdmi-apps.json")
             shutil.copytree(ROOT/"include",payload/"include")
             shutil.copy2(ROOT/"LICENSE",payload/"LICENSE")
             try:

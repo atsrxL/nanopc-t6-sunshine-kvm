@@ -6,6 +6,19 @@
 
 状态必须为：通过 / 失败 / 未测试 / 部分完成。每次结果绑定具体硬件、commit、二进制/动态库、客户端和证据目录。原记录不是新验收。
 
+## 最小服务端独立分支（`feat/minimal-kvm-server`，不覆盖已实测 main）
+
+| 检查 | 状态 | 证据 / 限定 |
+|---|---|---|
+| 原版 T6 HDMI/MPP、Moonlight 视频及 P3 USB 基线 | 通过 | 仅 `main` 的 results/20260923-t6/STATUS.md；不作为本分支的新测试 |
+| 独立 `rkmoon-kvm` P0 构建与无Web启动 | 通过 | 冻结912613c ARM64 QEMU链接exit0；隔离模拟probe启动TCP仅47984/47989/48010，无47990；见 results/20260923-minimal/STATUS.md。不是实机HDMI |
+| 私有 Unix PIN 操作与同 UID 权限 | 部分完成 | 分包/取消/边界fixture和真实Unix LIST、216ms退出通过；未完成新binary真实客户端PIN握手 |
+| HDMI ALSA 48k 双声道→Opus/RTP 音频 | 部分完成 | 真实生产object合成ALSA null+注入stale/xrun/初次无源5/10/20ms、Opus解码/恢复通过；真实HDMI PCM/声音/同步/重连未测，父会话发现T6 HDMI PCM未暴露，仍是阻碍 |
+| 无音频源不阻止视频/输入 | 未测试 | 代码路径保留视频入口；尚无本分支真实会话 |
+| 定制客户端真实视频+声音+USB | 未测试 | 等待客户端子会话与协调测试窗口 |
+
+本分支P0已通过（912613c，25原生+87 Python/联合/工具），新P1/P2/P3仍未测试，由父会话协调实机窗口。项目构建 VM301 为 Debian x86_64客体+arm64 QEMU容器；不是T6原生执行。最小服务端的“通过”只适用于明确列出的P0及模拟启动，不能声称新HDMI/客户端闭环已实测。
+
 ## 本次云端
 
 | 检查 | 状态 | 证据 / 限定 |
