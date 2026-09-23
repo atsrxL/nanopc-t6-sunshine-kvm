@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> HDMI音频专项 `fix/hdmirx-audio-codec`：固定95e85f6确认TX禁capture回归误伤RX，精确26.5.1 headers/config/symvers构建RX-only独立模块已交付（[源码与证据](kernel/hdmirx-codec/README.md)）。父会话已验证SHA、加载并仅重绑codec.5，card0 capture PCM恢复；真实48k stereo S16录音仍报Input/output error，**声音未通过**。本子会话仅编译/源码分析，硬件与回滚由父会话掌控。
+
 > 最小服务分支 `feat/minimal-kvm-server` 在独立目录开发，**不代表下述旧 main 验收已迁移**。已改为专用 `rkmoon-kvm` 无 WebUI/npm 主入口，保留 Sunshine GameStream 配对/RTSP/RTP/FEC/认证加密输入、固定 HDMI 应用；本地 0700/0600 Unix PIN CLI；显式 ALSA HDMI stereo 48k→Opus，缺源实时静音，断开重试。冻结912613c已完成ARM64 QEMU完整链接、25原生+87工具/联合、无Web模拟启动；runtime及精确hash见 `results/20260923-minimal/STATUS.md`，已交父会话，不包含后续3da8050启动文案。生产音频object的null/xrun合成测试通过；真实硬件/客户端音画仍未测，T6 HDMI card无PCM节点由父会话调查。构建 VM301 是 x86_64 客体跑 arm64 QEMU 容器，不是 T6 原生测试。详见 `docs/ADR-002-minimal-service.md`；不要在旧 VNC 项目部署/覆盖。
 
 > 实机更新：ARM64 worker/Sunshine 已构建；T6 真实 1080p60 HEVC/H264 各 60 秒及独立解码通过；原版 Moonlight HEVC 硬解超过 11 分钟、H264 重连通过。USB 尚未完成。见 [T6 验收记录](results/20260923-t6/STATUS.md)。
