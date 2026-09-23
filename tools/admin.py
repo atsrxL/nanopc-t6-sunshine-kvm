@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import socket
 import stat
+import time
 
 
 def exchange(state, command):
@@ -19,12 +20,28 @@ def exchange(state, command):
     ss=sock.lstat()
     if not stat.S_ISSOCK(ss.st_mode) or ss.st_uid!=os.getuid() or ss.st_mode&0o077:
         raise ValueError('private admin socket (0600, owned by user) required')
+    deadline=time.monotonic()+(40 if command.startswith('PIN ') else 5)
+    def remaining():
+        timeout=deadline-time.monotonic()
+        if timeout<=0:raise TimeoutError('operator socket deadline exceeded')
+        return timeout
     with socket.socket(socket.AF_UNIX) as client:
-        client.settimeout(45)
-        client.connect(str(sock))
-        client.sendall(command.encode('ascii'))
-        response=client.recv(4096).decode('ascii')
-    return response
+        client.settimeout(remaining());client.connect(str(sock))
+        data=memoryview(command.encode('ascii'))
+        while data:
+            client.settimeout(remaining())
+            sent=client.send(data)
+            if sent<=0:raise ConnectionError('admin socket closed while sending')
+            data=data[sent:]
+        response=bytearray()
+        terminator=b'.\n' if command=='LIST\n' else b'\n'
+        while not response.endswith(terminator):
+            client.settimeout(remaining())
+            chunk=client.recv(min(1024,4096-len(response)))
+            if not chunk:raise ConnectionError('admin socket closed before complete reply')
+            response.extend(chunk)
+            if len(response)>=4096:raise ValueError('admin response exceeded bound')
+    return response.decode('ascii')
 
 
 def main():

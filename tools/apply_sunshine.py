@@ -37,7 +37,7 @@ def at_entry(text, signature, body):
 def make_changes(original):
     changes={}
     for path,text in original.items():
-        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake"}:
+        if path not in {"src/thread_safe.h", "CMakeLists.txt", "cmake/targets/common.cmake", "src/nvhttp.h"}:
             text=once(text,"// local includes\n",'// local includes\n#include "src/rkmoon/rkmoon_bridge.hpp"\n')
         if path=="src/video.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
@@ -61,9 +61,35 @@ def make_changes(original):
             }
             for signature,call in calls.items():
                 text=at_entry(text,signature,"    if (rkmoon_sunshine::enabled()) { "+call+" return; }\n")
+        elif path=="src/platform/linux/misc.cpp":
+            text=at_entry(text,"  std::unique_ptr<deinit_t> init()",
+                "    if (rkmoon_sunshine::enabled()) { return std::make_unique<deinit_t>(); } // No EGL/desktop capture initialization.\n")
         elif path=="src/audio.cpp":
             text=at_entry(text,"  void capture(safe::mail_t mail, config_t config, void *channel_data)",
                 "    if (rkmoon_sunshine::enabled()) { rkmoon_sunshine::audio_capture(std::move(mail), config, channel_data); return; }\n")
+        elif path=="src/nvhttp.h":
+            text=once(text,"#include <string_view>\n", "#include <string_view>\n#include <stop_token>\n")
+            text=once(text,"  bool pin(std::string_view pairing_id, std::string pin, std::string name);",
+                "  bool pin(std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop = {});")
+        elif path=="src/nvhttp.cpp":
+            text=once(text,"  bool pin(const std::string_view pairing_id, std::string pin, std::string name) {",
+                "  bool pin(const std::string_view pairing_id, std::string pin, std::string name, std::stop_token stop) {")
+            text=once(text,"completion_deadline = std::min(sess.async_insert_pin.expires_at, now + config::stream.ping_timeout);",
+                "completion_deadline = std::min({sess.async_insert_pin.expires_at, now + config::stream.ping_timeout, now + std::chrono::seconds(30)});")
+            text=once(text,"""      if (completion->condition.wait_until(lock, completion_deadline, [&completion]() {
+            return completion->result.has_value();
+          })) {
+        return *completion->result;
+      }
+""","""      // Bounded wait so SIGTERM cannot stall the admin socket worker for
+      // an operator-configured multi-minute ping_timeout.
+      while (!stop.stop_requested() && std::chrono::steady_clock::now() < completion_deadline) {
+        if (completion->condition.wait_until(lock, std::min(completion_deadline,
+              std::chrono::steady_clock::now() + std::chrono::milliseconds(100)), [&completion]() {
+              return completion->result.has_value();
+            })) return *completion->result;
+      }
+""")
         elif path=="src/rtsp.cpp":
             anchor="    auto stream_session = stream::session::alloc(config, session);\n"
             text=once(text,anchor,"""    // RKMoon admission occurs AFTER upstream parsing/encryption validation and BEFORE input allocation.
@@ -130,7 +156,7 @@ set_target_properties(sunshine PROPERTIES OUTPUT_NAME rkmoon-kvm)
         changes[path]=text
     return changes
 
-FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/audio.cpp","src/rtsp.cpp","src/thread_safe.h","cmake/targets/common.cmake","CMakeLists.txt"]
+FILES=["src/video.cpp","src/input.cpp","src/platform/virtualhid_input.cpp","src/platform/linux/misc.cpp","src/audio.cpp","src/nvhttp.cpp","src/nvhttp.h","src/rtsp.cpp","src/thread_safe.h","cmake/targets/common.cmake","CMakeLists.txt"]
 
 def git(repo,*args):
     return subprocess.check_output(["git","-C",str(repo),*args],text=True).strip()
@@ -156,7 +182,7 @@ def main():
         stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
         try:
             payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
+            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp","rkmoon_admin_io.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
             shutil.copytree(ROOT/"include",payload/"include")
             shutil.copy2(ROOT/"LICENSE",payload/"LICENSE")

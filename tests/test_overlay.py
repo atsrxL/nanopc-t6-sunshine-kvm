@@ -36,6 +36,18 @@ class OverlayTests(unittest.TestCase):
         r=m.make_changes({'cmake/targets/common.cmake':s})['cmake/targets/common.cmake']
         self.assertNotIn('find_program(NPM',r)
         self.assertIn('# docs',r)
+    def test_no_desktop_platform_init(self):
+        fixture='// local includes\n  std::unique_ptr<deinit_t> init() {\noriginal();\n}\n'
+        changed=m.make_changes({'src/platform/linux/misc.cpp':fixture})['src/platform/linux/misc.cpp']
+        self.assertLess(changed.index('rkmoon_sunshine::enabled()'),changed.index('original();'))
+        self.assertIn('make_unique<deinit_t>()',changed)
+    def test_pairing_can_cancel_wait(self):
+        source=(Path(__file__).resolve().parents[1]/'vendor/sunshine/src/nvhttp.cpp')
+        # Fixture is the pinned source, not a fuzzy patch of an unknown version.
+        if source.exists():
+            changed=m.make_changes({'src/nvhttp.cpp':source.read_text()})['src/nvhttp.cpp']
+            self.assertIn('stop.stop_requested()',changed)
+            self.assertIn('std::chrono::seconds(30)',changed)
     def test_rtsp_admission_precedes_allocation(self):
         s='// local includes\n    auto stream_session = stream::session::alloc(config, session);\n'
         r=m.make_changes({'src/rtsp.cpp':s})['src/rtsp.cpp']

@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 def module(name):
     spec=importlib.util.spec_from_file_location(name,ROOT/'tools'/f'{name}.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
@@ -24,6 +25,20 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'config';c=self.config();c['capture_ownership_authorized']='false';p.write_text(json.dumps(c))
             with self.assertRaises(run.Refused):run.load(p)
+    def test_audio_requires_explicit_hardware_capture(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'config';c=self.config()
+            for device in ('default','pulse','hw:0\nBAD',''):
+                c['audio']={'enabled':True,'alsa_device':device};p.write_text(json.dumps(c))
+                with self.assertRaises(run.Refused):run.load(p)
+            c['audio']={'enabled':True,'alsa_device':'hw:CARD=HDMI,DEV=0'};p.write_text(json.dumps(c))
+            self.assertEqual(run.load(p)['audio']['alsa_device'],'hw:CARD=HDMI,DEV=0')
+    def test_audio_disabled_does_not_inherit_device(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'config';p.write_text(json.dumps(self.config()))
+            c=run.load(p)
+            with mock.patch.dict(os.environ,{'RKMOON_AUDIO_DEVICE':'default'}):
+                self.assertNotIn('RKMOON_AUDIO_DEVICE',run.base_env(c,Path(d)))
     def test_prepare_never_overwrites(self):
         with tempfile.TemporaryDirectory() as d:
             c=self.config();c['state_directory']=d;s=run.private_state(c);run.prepare(c,s)

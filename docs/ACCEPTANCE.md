@@ -6,6 +6,19 @@
 
 状态必须为：通过 / 失败 / 未测试 / 部分完成。每次结果绑定具体硬件、commit、二进制/动态库、客户端和证据目录。原记录不是新验收。
 
+## 最小服务端独立分支（`feat/minimal-kvm-server`，不覆盖已实测 main）
+
+| 检查 | 状态 | 证据 / 限定 |
+|---|---|---|
+| 原版 T6 HDMI/MPP、Moonlight 视频及 P3 USB 基线 | 通过 | 仅 `main` 的 results/20260923-t6/STATUS.md；不作为本分支的新测试 |
+| 独立 `rkmoon-kvm` 无 Web UI 入口与构建目标 | 部分完成 | `sunshine/rkmoon_main.cpp`、`tools/apply_sunshine.py`；需 ARM64 完整链接与运行验收 |
+| 私有 Unix PIN 操作与同 UID 权限 | 部分完成 | `sunshine/rkmoon_admin.cpp`、`tools/admin.py`；单元测试不等同实机配对 |
+| HDMI ALSA 48k 双声道→Opus/RTP 音频 | 未测试 | 源码 `sunshine/rkmoon_audio.cpp`；实际 HDMI 声音、时钟偏移/同步/静音/重连均须单独测量 |
+| 无音频源不阻止视频/输入 | 未测试 | 代码路径保留视频入口；尚无本分支真实会话 |
+| 定制客户端真实视频+声音+USB | 未测试 | 等待客户端子会话与协调测试窗口 |
+
+本分支在 P0 编译/离线测试通过之前不得推进新 P1/P2/P3。项目构建 VM301 为 Debian x86_64 宿主 + arm64 QEMU 容器；即使容器内 `uname -m` 为 aarch64 也不是 T6 原生执行。以上“通过”仅旧 `main` 基线，不能声称最小服务端已实测。
+
 ## 本次云端
 
 | 检查 | 状态 | 证据 / 限定 |

@@ -24,7 +24,7 @@ def load(path):
     if set(c) not in (expected,expected|{'audio'}) or c['schema']!=1:raise Refused('unknown/missing configuration fields')
     audio=c.get('audio',{'enabled':False,'alsa_device':''})
     if not isinstance(audio,dict) or set(audio)!={'enabled','alsa_device'} or type(audio['enabled']) is not bool or not isinstance(audio['alsa_device'],str):raise Refused('invalid HDMI audio configuration')
-    if audio['enabled'] and (not audio['alsa_device'].startswith(('hw:','plughw:')) or len(audio['alsa_device'])>128 or any(ch in audio['alsa_device'] for ch in '\\r\\n\\x00')):raise Refused('explicit hw:/plughw: HDMI capture device required (never default microphone)')
+    if audio['enabled'] and (not audio['alsa_device'].startswith(('hw:','plughw:')) or len(audio['alsa_device'])>128 or any(ch in audio['alsa_device'] for ch in '\r\n\x00')):raise Refused('explicit hw:/plughw: HDMI capture device required (never default microphone)')
     c['audio']=audio
     for k in ['capture_ownership_authorized','allow_cpu_pixel_copy','allow_high_resolution']:
         if type(c[k]) is not bool:raise Refused('configuration booleans must be true/false')
@@ -103,8 +103,9 @@ def base_env(c,state):
     return e
 
 def check_ports():
-    # Standard Sunshine ports; no firewall/UPnP changes. Additional upstream listeners may still fail at startup.
-    for kind,ports in [(socket.SOCK_STREAM,[47984,47989,47990,48010]),(socket.SOCK_DGRAM,[47998,47999,48000])]:
+    # Only GameStream HTTP/HTTPS + RTSP; port 47990 Web UI is not started.
+    # No firewall/UPnP changes. Additional upstream listeners may still fail at startup.
+    for kind,ports in [(socket.SOCK_STREAM,[47984,47989,48010]),(socket.SOCK_DGRAM,[47998,47999,48000])]:
         for port in ports:
             with socket.socket(socket.AF_INET,kind) as s:
                 try:s.bind(('0.0.0.0',port))

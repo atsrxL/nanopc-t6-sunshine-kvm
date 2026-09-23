@@ -1,12 +1,16 @@
 {
   "schema": 1,
-  "sunshine_binary": "/ABSOLUTE/PATH/rk3588-moonlight-kvm/build/sunshine/sunshine",
+  "sunshine_binary": "/ABSOLUTE/PATH/rkmoon-minimal-server/build/sunshine/rkmoon-kvm",
   "worker_binary": "/ABSOLUTE/PATH/rk3588-moonlight-kvm/build/native/rkmoon-worker",
   "state_directory": "/ABSOLUTE/PRIVATE/PATH/rkmoon",
   "capture_device": "/dev/video0",
   "capture_ownership_authorized": false,
   "allow_cpu_pixel_copy": false,
   "allow_high_resolution": false,
+  "audio": {
+    "enabled": false,
+    "alsa_device": "hw:CARD=HDMI,DEV=0"
+  },
   "input": {
     "enabled": false,
     "exclusive_hid_authorized": false,
