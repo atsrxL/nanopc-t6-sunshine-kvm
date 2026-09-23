@@ -38,3 +38,5 @@ HEVC dequeue→AU 中位 9.503 ms、P95 11.570 ms、最大 33.320 ms；H264 中�
 P3 只读检查确认 `/etc/t6-kvm/main.yaml` 使用启用鉴权的 `/run/t6-kvm/kvmd.sock`；keyboard 为 `/dev/hidg0`，mouse 为 `/dev/hidg1` 且 `absolute: true`，mouse_alt 未配置。实际 configfs `hid.usb1` report_length=7，X/Y Input 标志为 Absolute，与配置一致。服务未运行，尚不能验证在线 API 鉴权与 HID 状态。未读取或公开密码文件，未发送 USB 事件，未修改 gadget。
 
 建议下一授权窗口：保存原配置、描述符和 UDC 绑定到 `/root/agent.backup/`；将现有鼠标改为匹配 kvmd 的相对模式并重建 gadget（目标电脑 USB 键鼠会短暂重连）；隔离其他输入源后测试 Moonlight 键鼠和异常释放；结束时恢复原绝对模式、绑定和窗口入口服务状态。实施前仍需核对现有 gadget 创建入口，并审阅具体配置差异。此方案尚未执行。
+
+已核对创建入口：`t6-kvm-hardware.service` 调用 `prepare_hardware.py`，后者调用 `gadget.py`。现有 `gadget.py` 固定 `make_mouse_hid(True,True)`。拟议最小差异为专用临时副本使用 `make_mouse_hid(False,True)`，配套 kvmd mouse.absolute 从 true 改为 false；不修改旧项目源码。保留键盘描述符、VID/PID、序列号、UDC 和水平滚轮。恢复时使用原创建器恢复绝对鼠标并还原 kvmd 配置；不执行 prepare_hardware.py，避免其同时应用 EDID。所有差异目前仅为评审方案，未部署。
