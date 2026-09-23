@@ -1,0 +1,16 @@
+{
+  "codec": "hevc",
+  "client": "Moonlight 6.1.0 macOS / Apple M4",
+  "decoder": "VideoToolbox + Metal",
+  "last_worker_statistics": {
+    "kind": "stats",
+    "encoded": 41650,
+    "raw_skipped": 4,
+    "elapsed_us": 694401917,
+    "dequeue_to_au_us": 9327,
+    "au_bytes": 5348
+  },
+  "ten_minute_video_only": true,
+  "display_limitation": "Client reports 50 Hz display for a 60 FPS stream; not a 60 Hz presentation acceptance",
+  "input_enabled": false
+}

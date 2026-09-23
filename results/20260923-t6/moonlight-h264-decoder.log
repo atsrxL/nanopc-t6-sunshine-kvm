@@ -1,0 +1,22 @@
+00:00:00 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:00 - FFmpeg: [hevc @ 0x11fe06800] Format videotoolbox_vld chosen by get_format().
+00:00:00 - FFmpeg: [hevc @ 0x11fe06800] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
+00:00:00 - SDL Info (0): Video bitrate: 20000 kbps
+00:00:01 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:01 - FFmpeg: [h264 @ 0x10d907720] Format videotoolbox_vld chosen by get_format().
+00:00:01 - FFmpeg: [h264 @ 0x10d907720] Format videotoolbox_vld requires hwaccel h264_videotoolbox initialisation.
+00:00:01 - FFmpeg: [h264 @ 0x10d907720] Reinit context to 1280x720, pix_fmt: videotoolbox_vld
+00:00:01 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:01 - FFmpeg: [h264 @ 0x118c855f0] Format videotoolbox_vld chosen by get_format().
+00:00:01 - FFmpeg: [h264 @ 0x118c855f0] Format videotoolbox_vld requires hwaccel h264_videotoolbox initialisation.
+00:00:01 - FFmpeg: [h264 @ 0x118c855f0] Reinit context to 1280x720, pix_fmt: videotoolbox_vld
+00:00:02 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:02 - FFmpeg: [h264 @ 0x11c607590] Format videotoolbox_vld chosen by get_format().
+00:00:02 - FFmpeg: [h264 @ 0x11c607590] Format videotoolbox_vld requires hwaccel h264_videotoolbox initialisation.
+00:00:02 - FFmpeg: [h264 @ 0x11c607590] Reinit context to 1280x720, pix_fmt: videotoolbox_vld
+00:00:02 - SDL Info (0): Frame pacing disabled: target 50 Hz with 60 FPS stream
+00:00:02 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:02 - SDL Info (0): Received first video packet after 100 ms
+00:00:02 - FFmpeg: [h264 @ 0x11c60d770] Format videotoolbox_vld chosen by get_format().
+00:00:02 - FFmpeg: [h264 @ 0x11c60d770] Format videotoolbox_vld requires hwaccel h264_videotoolbox initialisation.
+00:00:02 - FFmpeg: [h264 @ 0x11c60d770] Reinit context to 1920x1088, pix_fmt: videotoolbox_vld

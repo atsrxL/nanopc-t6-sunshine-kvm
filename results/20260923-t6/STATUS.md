@@ -14,7 +14,8 @@
 | 真实 HDMI H264 60 秒 | 3594 帧，59.9993 fps，全部独立解码/VUI 检查通过 |
 | Sunshine 非 root 启动及内部 MPP probe | 通过，独立 HOME/state/私有运行库 |
 | 原版 Moonlight 6.1.0 配对、应用列表 | 通过，返回 HDMI |
-| Moonlight 硬解视频/10 分钟 | 待完成 |
+| Moonlight HEVC 硬解视频 | 超过 11 分钟，VideoToolbox + Metal，超过 4 万帧，队列高水位 1 |
+| Moonlight H264 重连硬解 | 通过，VideoToolbox + Metal；短时重连测试，非 10 分钟 H264 长测 |
 | 真实 USB 输入 | 未测试，input.enabled=false |
 
 HEVC dequeue→AU 中位 9.503 ms、P95 11.570 ms、最大 33.320 ms；H264 中位 9.477 ms、P95 11.454 ms、最大 29.618 ms。不含 HDMI 前端、网络和客户端显示，不能称端到端延迟。测试源内容未控制，码率和画质不是复杂运动压力验收。
@@ -27,3 +28,5 @@ HEVC dequeue→AU 中位 9.503 ms、P95 11.570 ms、最大 33.320 ms；H264 中�
 - 目标板缺少若干上游运行库，复制构建容器中的依赖至独立 runtime-lib，通过实例 LD_LIBRARY_PATH 加载，未安装系统包。
 
 原始视频/日志在 T6 `/home/at/rkmoon-20260923/`，Mac 私有证据在 `private/results/local/`。登录凭据、配对状态和视频不提交。测试窗口开始时旧三个服务已为 inactive（早先只读基线为 active），脚本按每次窗口入口状态恢复，不擅自启动已停服务。ACL 原始快照存放 T6 `/root/agent.backup/`。
+
+客户端 macOS / Apple M4、Moonlight 6.1.0。画面已实际观察；日志报告屏幕 50 Hz，不能据此宣称 60 Hz 显示呈现。HEVC 会话超过 10 分钟无日志中的解码错误，显式终止后 H264 能重新连接。无音频路径未阻止这个客户端连接，不代表所有客户端兼容。

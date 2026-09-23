@@ -1,0 +1,10 @@
+{
+  "architecture": "aarch64",
+  "worker_sha256": "efc6ad8ef3ced54769e95680ec6dde71959993c38a69f91163a2798149ec5acc",
+  "sunshine_sha256": "730bb024c3c8799c5f8af08bfd4807bcb1b6d0251def8e83db89701125cfabed",
+  "mpp_sha256": "3123715c4e284b1f851f78184ac505b90091461f70b6a999ae0a3704d27b82db",
+  "p1_worker_before_spawn_only_rebuild_sha256": "c4edbb0846ee59fb27600adc7724629784aee985ab76d90e4e9025c5de28201c",
+  "runtime_path": "/home/at/rkmoon-20260923",
+  "build_artifact_path_vm301": "/root/rkmoon-artifacts/20260923-arm64/runtime.tgz",
+  "input_enabled": false
+}

@@ -1,0 +1,25 @@
+00:00:00 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:00 - FFmpeg: [hevc @ 0x106de47a0] Format videotoolbox_vld chosen by get_format().
+00:00:00 - FFmpeg: [hevc @ 0x106de47a0] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
+00:00:00 - SDL Info (0): Video bitrate: 20000 kbps
+00:00:00 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:00 - FFmpeg: [hevc @ 0x12da0cc00] Main profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x12da0cc00] Main profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x12da0cc00] Format videotoolbox_vld chosen by get_format().
+00:00:00 - FFmpeg: [hevc @ 0x12da0cc00] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
+00:00:00 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:00 - FFmpeg: [hevc @ 0x15d24b1d0] Main profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x15d24b1d0] Main profile bitstream
+00:00:00 - FFmpeg: [hevc @ 0x15d24b1d0] Format videotoolbox_vld chosen by get_format().
+00:00:00 - FFmpeg: [hevc @ 0x15d24b1d0] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
+00:00:02 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:02 - FFmpeg: [hevc @ 0x12ca7bbe0] Main profile bitstream
+00:00:02 - FFmpeg: [hevc @ 0x12ca7bbe0] Main profile bitstream
+00:00:02 - FFmpeg: [hevc @ 0x12ca7bbe0] Format videotoolbox_vld chosen by get_format().
+00:00:02 - FFmpeg: [hevc @ 0x12ca7bbe0] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
+00:00:02 - SDL Info (0): Using Metal renderer with hardware decoding
+00:00:02 - SDL Info (0): Received first video packet after 100 ms
+00:00:02 - FFmpeg: [hevc @ 0x12a952710] Main profile bitstream
+00:00:02 - FFmpeg: [hevc @ 0x12a952710] Main profile bitstream
+00:00:02 - FFmpeg: [hevc @ 0x12a952710] Format videotoolbox_vld chosen by get_format().
+00:00:02 - FFmpeg: [hevc @ 0x12a952710] Format videotoolbox_vld requires hwaccel hevc_videotoolbox initialisation.
