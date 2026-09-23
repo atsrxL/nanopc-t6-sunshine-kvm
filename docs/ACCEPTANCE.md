@@ -6,6 +6,15 @@
 
 状态必须为：通过 / 失败 / 未测试 / 部分完成。每次结果绑定具体硬件、commit、二进制/动态库、客户端和证据目录。原记录不是新验收。
 
+## NUC9 LIMITED BGR 紧急修复（冻结worker `5445ddc`）
+
+| 检查 | 状态 | 证据 / 限定 |
+|---|---|---|
+| 输入RGB范围与编码输出范围分离、黑白/彩色边界 | 通过 | Linux native 28/28含3项limited测试，见 results/20260924-limited-bgr/STATUS.md；不是硬件图像测试 |
+| 复用固定MPP，仅ARM64 worker编译链接 | 通过 | worker SHA256 26db57837dc394e2f8f1ac77b9ba54304d6eb84172064f8851ed29ce582e5626；无Sunshine/内核重编 |
+| 新worker真实HDMI色彩、View及帧率 | 未测试 | 父会话部署；limited路径必须allow-copy，不能声明DMA-BUF或CPU视频编码 |
+| 当前NUC9真实HDMI音频 | 未测试 | 父会话报告未枚举Intel HDA；音频支线暂停，不能沿用MS-A2测试音观察 |
+
 ## 最小服务端独立分支（`feat/minimal-kvm-server`，不覆盖已实测 main）
 
 | 检查 | 状态 | 证据 / 限定 |
