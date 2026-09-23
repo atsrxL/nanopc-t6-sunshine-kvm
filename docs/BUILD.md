@@ -58,7 +58,7 @@ python3 tools/apply_sunshine.py vendor/sunshine --apply
 
 ## 5. 设备权限
 
-专用Sunshine不以root或filecap运行。根据实际设备，仅授予运行用户需要的video/render/MPP/dma_heap访问权限和kvmd私有socket访问；组名不是通用事实。`/dev/hidg*`不由本包直接打开；既有kvmd保留gadget所有权。权限变更单列授权/回滚，不运行“chmod 666全部设备”。
+专用Sunshine不以root或filecap运行。根据实际设备，仅授予运行用户需要的video/render/MPP/dma_heap访问权限和kvmd私有socket访问；组名不是通用事实。`/dev/hidg*`不由本包直接打开；独立 rkmoon-input 后端管理自己的 gadget，见 INDEPENDENT-INSTALL.md。权限变更单列授权/回滚，不运行“chmod 666全部设备”。
 
 ## 6. P1与P2先决条件
 

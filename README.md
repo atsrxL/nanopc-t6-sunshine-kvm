@@ -41,3 +41,7 @@ python3 tools/apply_sunshine.py vendor/sunshine --apply
 [首次构建记录](results/20260923-build/STATUS.md)、[T6 实机记录](results/20260923-t6/STATUS.md)、[架构](docs/ADR-001-architecture.md)。results/cloud 是交接包历史证据。视频、凭据和配对密钥不提交。
 
 新增代码 GPL-3.0-or-later；专用 Sunshine 组合构建遵循上游 GPL-3.0-only，详见 [许可证说明](docs/LICENSES.md)。
+
+## Independent installation
+
+Client, server, worker and USB input deployment are maintained in this repository. The old VNC project is not a runtime dependency. See [independent installation](docs/INDEPENDENT-INSTALL.md) for pinned kvmd, dedicated services and exclusive hardware ownership.

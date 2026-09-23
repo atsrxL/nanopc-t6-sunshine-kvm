@@ -110,6 +110,8 @@ def check_ports():
     for kind,ports in [(socket.SOCK_STREAM,[47984,47989,48010]),(socket.SOCK_DGRAM,[47998,47999,48000])]:
         for port in ports:
             with socket.socket(socket.AF_INET,kind) as s:
+                if kind==socket.SOCK_STREAM:
+                    s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
                 try:s.bind(('0.0.0.0',port))
                 except OSError:raise Refused(f'Port {port} is occupied; no owner was stopped') from None
 

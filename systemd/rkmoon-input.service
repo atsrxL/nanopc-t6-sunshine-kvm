@@ -1,0 +1,23 @@
+[Unit]
+Description=RKMoon independent local USB input backend
+Requires=rkmoon-gadget.service
+After=rkmoon-gadget.service
+[Service]
+User=rkmoon-input
+Group=rkmoon-input
+RuntimeDirectory=rkmoon-input
+RuntimeDirectoryMode=0750
+UMask=0007
+ExecStart=/opt/rkmoon-input/venv/bin/python /opt/rkmoon-input/runtime.py serve --source /opt/rkmoon-input/source --config /etc/rkmoon-input/main.yaml
+ExecStartPost=/opt/rkmoon-input/venv/bin/python /opt/rkmoon-input/runtime.py ready --source /opt/rkmoon-input/source --config /etc/rkmoon-input/main.yaml
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/run/rkmoon-input
+RestrictAddressFamilies=AF_UNIX
+TimeoutStopSec=20
+[Install]
+WantedBy=multi-user.target

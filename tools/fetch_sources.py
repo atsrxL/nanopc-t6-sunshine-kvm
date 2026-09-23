@@ -9,10 +9,10 @@ ROOT=Path(__file__).resolve().parents[1]
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--destination',type=Path,default=ROOT/'vendor')
-    p.add_argument('--component',choices=['sunshine','mpp','all'],default='all')
+    p.add_argument('--component',choices=['sunshine','mpp','kvmd','all'],default='all')
     a=p.parse_args();lock=json.loads((ROOT/'sources.lock.json').read_text())['sources']
     a.destination.mkdir(parents=True,exist_ok=True)
-    for name in (['mpp','sunshine'] if a.component=='all' else [a.component]):
+    for name in (['mpp','sunshine','kvmd'] if a.component=='all' else [a.component]):
         target=a.destination/name;entry=lock[name]
         if target.exists():raise SystemExit(f'Refusing existing directory: {target}; verify/reuse manually, never reset it')
         target.mkdir();subprocess.run(['git','init',str(target)],check=True)

@@ -1,0 +1,14 @@
+[Unit]
+Description=RKMoon owned USB keyboard and relative mouse
+After=systemd-modules-load.service
+Before=rkmoon-input.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/rkmoon-input/venv/bin/python /opt/rkmoon-input/runtime.py start --source /opt/rkmoon-input/source --config /etc/rkmoon-input/main.yaml
+ExecStop=/opt/rkmoon-input/venv/bin/python /opt/rkmoon-input/runtime.py stop --source /opt/rkmoon-input/source --config /etc/rkmoon-input/main.yaml
+RuntimeDirectory=rkmoon-gadget
+RuntimeDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=30
+TimeoutStopSec=30

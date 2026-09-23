@@ -14,7 +14,7 @@
   "input": {
     "enabled": false,
     "exclusive_hid_authorized": false,
-    "kvmd_socket": "/run/kvmd/kvmd.sock",
+    "kvmd_socket": "/run/rkmoon-input/kvmd.sock",
     "auth_headers_file": null
   }
 }

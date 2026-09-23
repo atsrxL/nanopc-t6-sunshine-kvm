@@ -28,7 +28,7 @@
       "version": "v4.120",
       "commit": "78ff181e95b14327831441d58f2f7f4cb2181cde",
       "license": "GPL-3.0-or-later",
-      "usage": "existing runtime via authenticated local API; do not replace automatically"
+      "usage": "independent pinned input-only runtime installed by tools/install_input.py; no VNC project dependency"
     }
   },
   "limitations": [
