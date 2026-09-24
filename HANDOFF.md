@@ -109,4 +109,4 @@ T6 当前运行 /home/at/rkmoon-r3/（rkmoon-kvm 8c7cbf8a…，worker 647c109e�
 
 ## 正式安装布局（2026-09-24 晚）
 
-T6 服务端已从 home 下的散落目录迁到 /opt/rkmoon/releases/20260924-r9（current 链接），配置 /etc/rkmoon/runtime.json，状态 /var/lib/rkmoon。rkmoon、rkmoon-edid、rkmoon-hdmirx-audio、rkmoon-input 全部开机自启，EDID 开机自动写入。打包/安装/回滚见 docs/SERVER-INSTALL.md。旧临时服务 rkmoon-http-live 已停止；/home/at 下 rkmoon-r3…r9 等旧目录暂未删除，确认整机重启正常后可以清理。HID 桥在 USB 离线时不再退出，而是拒绝租约直到按键释放成功。尚未做整机重启验证。
+T6 服务端已从 home 下的散落目录迁到 /opt/rkmoon/releases/20260924-r9（current 链接），配置 /etc/rkmoon/runtime.json，状态 /var/lib/rkmoon。rkmoon、rkmoon-edid、rkmoon-hdmirx-audio、rkmoon-input 全部开机自启，EDID 开机自动写入。打包/安装/回滚见 docs/SERVER-INSTALL.md。旧临时服务 rkmoon-http-live 已停止；旧运行目录（/home/at/rkmoon-*、/usr/local/lib/rkmoon、/opt/rkmoon-input-venv、/opt/rkmoon-kvmd-source 及 /root/agent.backup 下的旧 rkmoon 备份）已于同日删除，约 2GB；只保留原始 EDID 备份。回滚只能用 /opt/rkmoon/releases 里的发布。HID 桥在 USB 离线时不再退出，而是拒绝租约直到按键释放成功。尚未做整机重启验证。
