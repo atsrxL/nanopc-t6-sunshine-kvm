@@ -106,3 +106,7 @@ EDID 未做开机持久化；T6 重启后需重新写入。Znas 上临时计划�
 ## 输入/断线缓冲部署（2026-09-24，ADR-010）
 
 T6 当前运行 /home/at/rkmoon-r3/（rkmoon-kvm 8c7cbf8a…，worker 647c109e…），HID Python 已更新到 /home/at/rkmoon-http-1440p90/python/rkmoon_hid（WebSocket 事件流）。回滚：/root/agent.backup/rkmoon-r3-20260924/ 下的 runtime.json 和 rkmoon_hid，旧二进制仍在 /home/at/rkmoon-custom-modes/。客户端实测未完成。
+
+## 正式安装布局（2026-09-24 晚）
+
+T6 服务端已从 home 下的散落目录迁到 /opt/rkmoon/releases/20260924-r9（current 链接），配置 /etc/rkmoon/runtime.json，状态 /var/lib/rkmoon。rkmoon、rkmoon-edid、rkmoon-hdmirx-audio、rkmoon-input 全部开机自启，EDID 开机自动写入。打包/安装/回滚见 docs/SERVER-INSTALL.md。旧临时服务 rkmoon-http-live 已停止；/home/at 下 rkmoon-r3…r9 等旧目录暂未删除，确认整机重启正常后可以清理。HID 桥在 USB 离线时不再退出，而是拒绝租约直到按键释放成功。尚未做整机重启验证。

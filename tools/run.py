@@ -140,9 +140,13 @@ def start(c,state):
     if c['input']['enabled'] and not c['input']['exclusive_hid_authorized']:raise Refused('HID exclusivity not granted')
     envroot=prepare(c,state);check_ports();env=base_env(c,state)
     children=[];logs=[];stopping=False;failed=False;hid_started=False
-    def spawn(args,logname):
+    # Release layout ships Sunshine's runtime libraries and MPP in ROOT/lib. Only the native
+    # server (and the worker it starts) sees them; the Python HID bridge keeps system libraries.
+    native_env=dict(env)
+    if (ROOT/'lib').is_dir():native_env['LD_LIBRARY_PATH']=str(ROOT/'lib')
+    def spawn(args,logname,child_env=env):
         log=(state/logname).open('ab',buffering=0);logs.append(log)
-        p=subprocess.Popen([sys.executable,str(ROOT/'tools/child_exec.py'),str(os.getpid()),'--',*args],env=env,cwd=state,stdout=log,stderr=subprocess.STDOUT)
+        p=subprocess.Popen([sys.executable,str(ROOT/'tools/child_exec.py'),str(os.getpid()),'--',*args],env=child_env,cwd=state,stdout=log,stderr=subprocess.STDOUT)
         children.append(p);return p
     def on_signal(sig,frame):
         nonlocal stopping
@@ -158,7 +162,7 @@ def start(c,state):
             while not (state/'hid.sock').exists():
                 if hid.poll() is not None or stopping or time.monotonic()>deadline:raise Refused('HID bridge did not become ready; inspect sanitized local log')
                 time.sleep(.05)
-        sunshine=spawn([c['sunshine_binary'],str(state/'sunshine.conf')],'sunshine.log')
+        sunshine=spawn([c['sunshine_binary'],str(state/'sunshine.conf')],'sunshine.log',native_env)
         print('RKMoon minimal host started; no Web UI. Connect with the password-enabled client. Ctrl+C stops this instance.',flush=True)
         while not stopping:
             if any(p.poll() is not None for p in children):failed=True;break

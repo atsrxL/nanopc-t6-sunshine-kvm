@@ -1,0 +1,37 @@
+# Installed by tools/install_server.py, which replaces @USER@ with the streaming account.
+[Unit]
+Description=RKMoon HDMI to Moonlight KVM server
+Wants=network-online.target rkmoon-hdmirx-audio.service rkmoon-edid.service rkmoon-input.service
+After=network-online.target rkmoon-hdmirx-audio.service rkmoon-edid.service rkmoon-input.service
+StartLimitIntervalSec=300
+StartLimitBurst=20
+
+[Service]
+Type=simple
+User=@USER@
+# Narrow device grants for the MPP encoder and DMA buffers; V4L2/DRM/ALSA come from groups.
+ExecStartPre=+/usr/bin/setfacl -m u:@USER@:rw /dev/mpp_service /dev/dma_heap/system-uncached
+ExecStart=/usr/bin/python3 /opt/rkmoon/current/tools/run.py start --config /etc/rkmoon/runtime.json
+# Independent HID release after any exit; a failed release keeps the recovery marker.
+ExecStopPost=/usr/bin/python3 /opt/rkmoon/current/tools/systemd_release.py --config /etc/rkmoon/runtime.json
+StateDirectory=rkmoon
+StateDirectoryMode=0700
+KillMode=control-group
+TimeoutStopSec=90
+# The HID bridge neutralizes every key/button before it accepts a lease, so a restart
+# cannot re-arm a stuck key even when the previous release was not confirmed.
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# No PrivateDevices: V4L2/MPP/DRM/dma_heap/ALSA nodes must remain visible.
+
+[Install]
+WantedBy=multi-user.target

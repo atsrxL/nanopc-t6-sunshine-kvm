@@ -226,6 +226,18 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         other=Server(self.b)
         with self.assertRaises(InputError): await other.listen(self.path)
 
+class StartupRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_offline_start_refuses_until_neutral(self):
+        class Offline(Fake):
+            def __init__(self):super().__init__();self.online=False;self.neutralized=0
+            async def check(self):
+                if not self.online:raise BackendError('offline')
+            async def neutralize(self):self.neutralized+=1
+        b=Offline();s=Server(b);s.block_until_neutral(interval=0.01)
+        await asyncio.sleep(0.05);self.assertTrue(s.busy);self.assertEqual(b.neutralized,0)
+        b.online=True;await until(lambda:not s.busy);self.assertEqual(b.neutralized,1)
+        await s.close()
+
 class HttpTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.path=str(Path(self.tmp.name)/'kvmd.sock')
@@ -248,8 +260,23 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
         await self.k.check();await self.k.select_mouse('absolute')
         with self.assertRaises(BackendError):await self.k.select_mouse('relative')
     async def test_offline_state(self):
-        self.response['result']['keyboard']['online']=False
+        self.response['result']['keyboard']['online']=False  # stays offline after the wake probe
         with self.assertRaises(BackendError): await self.k.check()
+        self.assertTrue(any(b'send_key' in c for c in self.calls))
+        self.assertFalse(any(b'send_mouse_wheel' in c for c in self.calls))
+    async def test_offline_flag_recovers_after_wake(self):
+        # kvmd keeps online=false after the USB host rebooted until one report is written.
+        self.response['result']['mouse']['online']=False
+        state=self.response['result']
+        async def woke():
+            state['mouse']['online']=True
+        real=self.k.wheel
+        async def wheel(x,y):
+            await real(x,y);await woke()
+        self.k.wheel=wheel
+        await self.k.check()
+        self.assertFalse(any(b'send_key' in c for c in self.calls))
+        self.assertTrue(any(b'send_mouse_wheel' in c for c in self.calls))
     async def test_chunked(self): self.chunked=True;await self.k.check()
     async def test_http_reject(self):
         self.code=401
@@ -307,7 +334,9 @@ class SelectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_offline_no_write(self):
         self.state['mouse']['online']=False
         with self.assertRaises(BackendError):await self.k.select_mouse('absolute')
-        self.assertTrue(all(c[0]=='GET' for c in self.calls))
+        # Only neutral wake reports may be written; the mouse output is never switched.
+        self.assertFalse(any(c[1]=='/hid/set_params' for c in self.calls))
+        self.assertTrue(all(c[1]=='/hid' or c[2].get('state')=='false' or c[1]=='/hid/events/send_mouse_wheel' or c[2].get('key')=='ShiftLeft' for c in self.calls))
     async def test_single_relative_no_write(self):
         self.state['mouse']['outputs']={'available':[],'active':''}
         await self.k.select_mouse('relative')

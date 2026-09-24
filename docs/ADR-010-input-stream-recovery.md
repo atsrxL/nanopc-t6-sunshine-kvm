@@ -41,3 +41,11 @@ T6实测（1000Hz绝对坐标注入1.5秒）：旧版最后输入后4098ms才写
 - 键盘F20按下后立即抬起200次：只收到109次；间隔1ms 193、2ms 171、4ms以上200。kvmd日志无写入失败，USB未断开。原因：键盘报告间隔短于约4ms时，被控机来不及轮询，按下与抬起两份报告只有后一份生效，这次按键就消失了。旧版逐条HTTP请求每条约2ms，也会偶发。
 
 改法：键盘报告与鼠标一样按4.2ms间隔发送（各自独立计时）。修复后900次0～2ms间隔的按键全部收到。backend.py `df5adb7c…` 已部署，备份在 `/root/agent.backup/rkmoon-r6-20260924/`。
+
+## 补充：被控机重启后会话立即关闭（2026-09-24）
+
+现象：被控机重启后客户端闪一下就退出，服务端日志为 `RKMoon session ended: HID handshake closed`。原因：kvmd 只在成功写入一次 HID 报告后才把 `online` 设回 true；被控机重启、USB 重新枚举后，UDC 已是 configured，但 `/hid` 仍报告键鼠 offline，`select_mouse()` 于是拒绝每一次租约。修复：`Kvmd.check()` 发现 offline 时先发送中性报告（ShiftLeft 按下再松开、零位移滚轮）重新探测，再读一次状态；仍 offline 才拒绝。T6 部署 backend.py `c7c158dc…`，备份在 `/root/agent.backup/rkmoon-r7-20260924/`；实机租约申请成功，kvmd 键鼠均 online。
+
+## 补充：键鼠不可用时不再结束视频会话（2026-09-24）
+
+用户要求：没有键鼠也应能看画面。此前 `capture()` 在建立会话前同步申请 HID 租约，失败即抛异常结束会话；会话中租约失效也会结束会话。现改为：视频先启动，后台线程 `maintain_input` 申请租约，失败时记录一次警告，每 2 秒重试；租约中途失效则释放并重新申请，视频不中断。HID bridge 在释放失败（`hid-recovery-needed`/busy）时仍拒绝新租约，卡键保护不变。会话结束时先 join 后台线程再释放租约。T6 部署 rkmoon-kvm `04733655…`（/home/at/rkmoon-r8/，VM301 容器构建），runtime.json 备份在 `/root/agent.backup/rkmoon-r8-20260924/`。实机：服务重启后客户端自动重连，`input lease acquired`，约 120fps 推流。尚未实测“键鼠不可用时的纯视频”场景。

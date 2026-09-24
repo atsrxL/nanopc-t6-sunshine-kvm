@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
+#include <condition_variable>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 #include <unistd.h>
 namespace rkmoon_sunshine {
@@ -43,6 +45,27 @@ std::vector<std::string> args(const rkmoon::Config& c){
   return a;
 }
 void release_input(){std::shared_ptr<rkmoon::HidClient> old;{std::lock_guard lock(input_mutex);old=std::move(input);}old.reset();}
+// Input is optional for a session: video keeps streaming while the HID lease is refused or
+// lost, and a background thread re-acquires it every 2s. The HID bridge still refuses new
+// leases while a failed release is pending, so a stuck key can never be re-armed.
+void maintain_input(std::stop_token stop,std::string path,bool absolute){
+  std::mutex m;std::condition_variable_any cv;bool warned=false;
+  while(!stop.stop_requested()){
+    bool need;{std::lock_guard lock(input_mutex);need=!input||!input->healthy();}
+    if(need){
+      release_input();
+      try{
+        auto fresh=std::make_shared<rkmoon::HidClient>(path,absolute);
+        if(stop.stop_requested())return;
+        {std::lock_guard lock(input_mutex);input=std::move(fresh);}
+        BOOST_LOG(info)<<"RKMoon input lease acquired";warned=false;
+      }catch(const std::exception& e){
+        if(!warned){BOOST_LOG(warning)<<"RKMoon input unavailable, video continues without input: "<<e.what();warned=true;}
+      }
+    }
+    std::unique_lock lock(m);cv.wait_for(lock,stop,std::chrono::seconds(need?2:1),[]{return false;});
+  }
+}
 }
 bool enabled() noexcept{return true;}
 bool request_supported(const video::config_t& c) noexcept{try{translate(c);return yes("RKMOON_CAPTURE_AUTHORIZED");}catch(...){return false;}}
@@ -69,17 +92,17 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
   try {
     if(!yes("RKMOON_CAPTURE_AUTHORIZED"))throw std::runtime_error("capture ownership has not been granted");
     auto c=translate(config);
-    std::shared_ptr<rkmoon::HidClient> pending_input;
-    if(!env("RKMOON_HID_SOCKET").empty()) pending_input=std::make_shared<rkmoon::HidClient>(env("RKMOON_HID_SOCKET"),config.rkmoon_absolute_mouse);
     rkmoon::Child worker(env("RKMOON_WORKER"),args(c));
-    auto early_release=util::fail_guard([&]{release_input();pending_input.reset();});
     auto ready=rkmoon::receive(worker.fd(),3000ms);
     if(ready.h.kind!=rkmoon::Kind::ready||ready.h.width!=c.width||ready.h.height!=c.height||ready.h.codec!=c.codec||ready.h.extra!=c.fps_x100)throw std::runtime_error("capture negotiation failed");
     // HDMI is the entire input viewport. No T6 desktop layout or logical scaling.
     mail->event<::input::touch_port_t>(mail::touch_port)->raise(::input::touch_port_t{
       {0,0,int(c.width),int(c.height),0,0},int(c.width),int(c.height),0,0,1,1,0,0});
     mail->event<video::hdr_info_t>(mail::hdr)->raise(std::make_unique<video::hdr_info_raw_t>(false));
-    {std::lock_guard lock(input_mutex);input=std::move(pending_input);}
+    // Declared after 'cleanup': joined (and any in-flight acquisition finished) before release_input().
+    std::jthread input_keeper;
+    if(!env("RKMOON_HID_SOCKET").empty())
+      input_keeper=std::jthread(maintain_input,env("RKMOON_HID_SOCKET"),bool(config.rkmoon_absolute_mouse));
     auto idr=mail->event<bool>(mail::idr);
     auto queue=mail::man->queue<video::packet_t>(mail::video_packets);
     rkmoon::SequenceGate gate;
@@ -89,7 +112,6 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
     bool await_idr=false;uint64_t dropped=0;
     auto request_idr=[&]{rkmoon::Message ctl;ctl.h.kind=rkmoon::Kind::idr;rkmoon::send(worker.fd(),ctl,100ms);};
     while(!shutdown_event->peek()) {
-      {std::lock_guard lock(input_mutex);if(input&&!input->healthy())throw std::runtime_error("HID lease lost; terminating session");}
       if(idr->peek()) {idr->pop();request_idr();}
       if(!rkmoon::readable(worker.fd(),20ms)) {
         // Worker recovers transient capture faults for up to 5s; allow that window plus margin.

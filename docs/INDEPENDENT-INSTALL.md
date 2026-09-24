@@ -52,7 +52,7 @@ reviewed RX codec fix; seeing a sound card alone does not establish capture supp
    input.exclusive_hid_authorized true, kvmd_socket=/run/rkmoon-input/kvmd.sock.
    Grant the streaming account narrowly scoped video/MPP/render/dma_heap and HDMI
    ALSA permissions. Use hw:CARD=rockchiphdmiin,DEV=0 only after checking arecord -l.
-   Sunshine remains unprivileged. Follow tools/run.py and systemd/rkmoon.service.example.
+   Sunshine remains unprivileged. Install the server release with tools/install_server.py (docs/SERVER-INSTALL.md).
    Include After= and Requires=rkmoon-input.service for a system service with input.
    Keep MPP libraries in this project's private prefix and scope LD_LIBRARY_PATH to
    that service. Do not use /opt/t6-kvm or /etc/t6-kvm paths.

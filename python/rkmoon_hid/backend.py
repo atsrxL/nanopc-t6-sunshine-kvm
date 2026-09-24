@@ -95,11 +95,27 @@ class Kvmd:
     async def check(self):
         state = await self.request("GET", "/hid")
         keyboard, mouse = state.get("keyboard", {}), state.get("mouse", {})
+        if state.get("enabled") is True and (keyboard.get("online") is not True or mouse.get("online") is not True):
+            # kvmd only flips "online" back to true after a successful report write. After the
+            # USB host reboots, the flag stays false although the gadget is configured again.
+            # Neutral reports (modifier tap, zero motion) re-probe without visible side effects.
+            await self.wake(keyboard.get("online") is not True, mouse.get("online") is not True)
+            state = await self.request("GET", "/hid")
+            keyboard, mouse = state.get("keyboard", {}), state.get("mouse", {})
         if state.get("enabled") is not True or keyboard.get("online") is not True or mouse.get("online") is not True:
             raise BackendError("USB HID is not reported online")
         if type(mouse.get("absolute")) is not bool:
             raise BackendError("USB mouse mode is unknown")
         return state
+
+    async def wake(self, keyboard, mouse):
+        if keyboard:
+            await self.key("ShiftLeft", True)
+            await self.key("ShiftLeft", False)
+        if mouse:
+            # A zero wheel event always yields one neutral report in both mouse modes.
+            await self.wheel(0, 0)
+        await asyncio.sleep(0.05)
 
     async def select_mouse(self, mode):
         if mode not in {"relative", "absolute"}:

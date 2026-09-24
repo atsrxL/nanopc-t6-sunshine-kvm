@@ -38,14 +38,7 @@ auth_headers_file是本机生成的JSON字典，仅允许`X-KVMD-User`、`X-KVMD
 
 ## 可选systemd
 
-`systemd/rkmoon.service.example`是用户单元模板，**无[Install]节，不默认enable**。只有用户同意后复制到用户unit目录，替换PROJECT_ROOT/PRIVATE_CONFIG、检查exec路径，然后`systemctl --user daemon-reload`。
-
-```bash
-systemctl --user start rkmoon.service
-systemctl --user stop rkmoon.service
-```
-
-KillMode=control-group，ExecStopPost独立尝试release-all，Restart=no。不要擅自enable linger或系统开机服务。若需要开机运行，另行批准运行账户、ACL和所有权切换策略。
+正式部署改为系统服务 `rkmoon.service`，由 `tools/install_server.py` 安装并开机自启，详见 [SERVER-INSTALL.md](SERVER-INSTALL.md)。服务以普通用户运行，ExecStopPost 独立执行 release-all。
 
 ## 停止和回滚
 

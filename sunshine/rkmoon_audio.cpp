@@ -58,16 +58,21 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
   auto retry_at = std::chrono::steady_clock::now();
   auto next_packet = retry_at;
   uint64_t recovered = 0, silent = 0, stale = 0, xruns = 0;
+  // HDMI-RX turns its I2S output off while the source sends silence (AUD_SAMPLE_FLAT /
+  // "audio off"), so reads time out until sound resumes. Once a device has opened, retry
+  // quickly so the start of new sound is not lost, and log only the first failure of a run.
+  bool quiet = false;
   platf::set_thread_name("rkmoon::audio");
   while (!shutdown->peek()) {
     auto now = std::chrono::steady_clock::now();
     if (!pcm && now >= retry_at) {
       pcm = audio_io::open_pcm(device, frames, capture_period);
-      retry_at = now + 2s;
+      retry_at = now + (recovered ? 250ms : 2s);
       if (pcm) {
         ++recovered;
-        BOOST_LOG(info) << "RKMoon 48k stereo HDMI capture ready (open count " << recovered
-                        << ", bitrate " << bitrate << ", period_frames " << capture_period << ")";
+        if (recovered == 1)
+          BOOST_LOG(info) << "RKMoon 48k stereo HDMI capture ready (bitrate " << bitrate
+                          << ", period_frames " << capture_period << ")";
       } else if (recovered == 0) {
         BOOST_LOG(warning) << "RKMoon HDMI audio unavailable; sending initial silence; video/input continue";
       }
@@ -108,11 +113,16 @@ void audio_capture(safe::mail_t mail, audio::config_t config, void *channel_data
         break;
       }
       if (received != frames) valid = false;
+      if (valid && quiet) {
+        quiet = false;
+        BOOST_LOG(info) << "RKMoon HDMI audio resumed";
+      }
       if (!valid) {
         if (!cleared_stale) {
           pcm.reset();
-          retry_at = std::chrono::steady_clock::now() + 2s;
-          BOOST_LOG(warning) << "RKMoon HDMI audio interrupted; sending silence and retrying";
+          retry_at = std::chrono::steady_clock::now() + 250ms;
+          if (!quiet) BOOST_LOG(info) << "RKMoon HDMI audio idle or interrupted; sending silence and retrying";
+          quiet = true;
         } else if (stale <= 3 || stale % 100 == 0) {
           BOOST_LOG(warning) << "RKMoon HDMI stale audio ring discarded; stale_resets=" << stale;
         }

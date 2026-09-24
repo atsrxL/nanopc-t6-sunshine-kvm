@@ -1,0 +1,15 @@
+[Unit]
+Description=RKMoon HDMI-IN EDID (source display modes)
+After=systemd-udev-settle.service systemd-modules-load.service
+Before=rkmoon.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Writes only when the receiver EDID differs, so a matching EDID causes no source hotplug.
+ExecStart=/usr/bin/python3 /opt/rkmoon/current/tools/edid_apply.py apply --device /dev/video0 --edid /opt/rkmoon/current/config/rkmoon-edid-eight-modes.bin --backup /var/lib/rkmoon-edid/original.bin
+StateDirectory=rkmoon-edid
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

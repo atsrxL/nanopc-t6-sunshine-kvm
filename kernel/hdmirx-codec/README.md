@@ -60,3 +60,9 @@ VM301：`/root/rkmoon-artifacts/20260923-hdmirx-codec/rkmoon_hdmirx_codec.ko`
 源码生成/3项转换单测、交叉编译/CRC校验与真实模块加载、PCM枚举、真实HDMI录音/频谱及客户端Opus声音必须分别记录。
 
 父会话后续实机反馈：已验证模块SHA并insmod、仅codec.5 override成功，card0 `rockchiphdmiin` capture PCM恢复；源端MSA2 hw:0,3输出48k stereo S16处于RUNNING/ELD有效，但T6相同格式arecord报`pcm_read Input/output error`，Read Wait Time MS=50。枚举修复已验证，真实声音**仍未通过**，继续只读分析RX/I2S/DMA启动条件；不得继续宣称端到端验收完成。
+
+## 2026-09-24：开机自动重绑与静音间隙
+
+声音再次失效的原因：T6 于 03:14 重启，外置模块和 codec.5 重绑都不是持久的，card0 回到“无 capture PCM”，服务端只能发送静音。新增 `tools/hdmirx_audio_bind.py` 和 `systemd/rkmoon-hdmirx-audio.service`：开机时校验内核版本、模块 SHA 和 RX 父设备，按上文顺序重绑，任一步失败就完整回滚；已经绑定时不做任何操作。现在随服务端发布包安装：模块在 `/opt/rkmoon/current/kernel/`，脚本在 `/opt/rkmoon/current/tools/`，服务已 enable（见 docs/SERVER-INSTALL.md）。
+
+重绑后实机：被控机发声时 RX 报 `audio on`，PCM 保持 RUNNING，hw_ptr 每秒约前进 48000 帧；源端静音时 RX 关闭 I2S（`audio off`），读会超时。服务端 r9（rkmoon-kvm `19111b05…`）改为：设备打开过一次之后，静音期间每 250ms 重新打开一次，日志只在进入和离开静音时各记一条。之前 1–2 次测试时的 EIO 是静音期间读取造成的，有声时读取正常。尚未做客户端侧的主观听感、频谱或音画同步测试。

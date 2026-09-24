@@ -100,6 +100,21 @@ class Server:
                 self.busy=False;return
         # ExecStopPost's independently invoked neutralize handles abnormal/unfinished termination.
         await lease.release()
+    def block_until_neutral(self,interval=2.0):
+        """Refuse leases until kvmd is reachable and every key/button release is confirmed.
+
+        Used when the bridge starts while USB HID is offline (target powered off, input
+        service still starting). Video keeps running; input becomes available afterwards.
+        """
+        self.busy=True
+        async def recover():
+            while not self.stopping:
+                try:
+                    await self.backend.check();await self.backend.neutralize()
+                except Exception:
+                    await asyncio.sleep(interval);continue
+                self.busy=False;LOG.info("USB HID online and neutral; input leases accepted");return
+        self.recovery=asyncio.create_task(recover())
     async def listen(self,path):
         p=Path(path);parent=p.parent
         parent.mkdir(mode=0o700,parents=True,exist_ok=True)

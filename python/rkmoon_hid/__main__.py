@@ -5,7 +5,7 @@ import logging
 import os
 import signal
 from pathlib import Path
-from .backend import Kvmd, read_private_json
+from .backend import Kvmd, BackendError, read_private_json
 from .server import Server
 
 async def main(args):
@@ -15,10 +15,15 @@ async def main(args):
     backend=Kvmd(args.kvmd_socket,headers)
     if args.release_all:
         await backend.neutralize();return
-    await backend.check()
+    server=Server(backend)
     # Recover from an earlier killed bridge before accepting a new session. Exclusive ownership is required.
-    await backend.neutralize()
-    server=Server(backend);await server.listen(args.socket)
+    # If USB HID is offline now, keep listening but refuse leases until neutralization succeeds.
+    try:
+        await backend.check();await backend.neutralize()
+    except BackendError:
+        logging.warning("USB HID not ready at start; input leases refused until release is confirmed")
+        server.block_until_neutral()
+    await server.listen(args.socket)
     stop=asyncio.Event();loop=asyncio.get_running_loop()
     for sig in (signal.SIGINT,signal.SIGTERM):loop.add_signal_handler(sig,stop.set)
     try:await stop.wait()
