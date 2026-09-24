@@ -36,14 +36,19 @@ int main(int argc,char** argv){try{
     {"wire_payload",[]{auto h=au().h;h.kind=Kind::ack;auto b=pack(h);rejects([&]{unpack(b.data(),b.size());});}},
     {"wire_flags",[]{auto h=au().h;h.flags=32;auto b=pack(h);rejects([&]{unpack(b.data(),b.size());});}},
     {"config_valid",[]{Config{}.validate();}},
-    {"config_invalid",[]{Config c;c.width=1919;rejects([&]{c.validate();});c.width=1920;c.fps_x100=3000;rejects([&]{c.validate();});}},
+    {"config_invalid",[]{Config c;c.width=1919;rejects([&]{c.validate();});c.width=1920;c.fps_x100=99;rejects([&]{c.validate();});}},
     {"experimental_1440p90",[]{
-      Config c;c.width=2560;c.height=1440;c.fps_x100=8999;
-      rejects([&]{c.validate();});c.allow_1440p90_experiment=true;c.validate();
-      for(auto fps:{8899U,9011U,0U,UINT32_MAX}){c.fps_x100=fps;rejects([&]{c.validate();});}
-      for(auto fps:{8900U,9000U,9010U}){c.fps_x100=fps;c.validate();}
-      c.width=2558;rejects([&]{c.validate();});c.width=2560;c.height=1438;rejects([&]{c.validate();});
-      c.height=1440;c.fps_x100=6000;c.allow_1440p90_experiment=false;c.validate();
+      Config c;c.width=2558;c.height=1438;
+      for(auto fps:{100U,2398U,3000U,5994U,9000U,12010U}){c.fps_x100=fps;c.validate();}
+      for(auto fps:{0U,99U,12011U,UINT32_MAX}){c.fps_x100=fps;rejects([&]{c.validate();});}
+      c.width=3840;c.height=2160;c.fps_x100=6010;c.validate();
+      c.fps_x100=6011;rejects([&]{c.validate();});
+      c.width=64;c.height=64;c.fps_x100=12010;c.validate();
+      c.width=62;rejects([&]{c.validate();});
+      c.width=3842;rejects([&]{c.validate();});
+      c.width=64;c.height=2162;rejects([&]{c.validate();});
+      c.width=2560;c.height=1440;c.fps_x100=9000;
+      c.allow_1440p90_experiment=false;c.validate();c.allow_1440p90_experiment=true;c.validate();
     }},
     {"encoder_levels",[]{
       Config c;must(mpp_video_level(c)==123);c.codec=Codec::h264;must(mpp_video_level(c)==42);
@@ -51,6 +56,12 @@ int main(int argc,char** argv){try{
       must(mpp_video_level(c)==51);c.codec=Codec::hevc;must(mpp_video_level(c)==150);
       c.fps_x100=8999;c.allow_1440p90_experiment=true;
       must(mpp_video_level(c)==153);c.codec=Codec::h264;must(mpp_video_level(c)==52);
+      c.width=3840;c.height=2160;c.fps_x100=100;must(mpp_video_level(c)==51);
+      c.fps_x100=6010;must(mpp_video_level(c)==52);c.codec=Codec::hevc;must(mpp_video_level(c)==153);
+      c.width=1920;c.height=1080;c.fps_x100=12010;must(mpp_video_level(c)==150);
+      c.codec=Codec::h264;must(mpp_video_level(c)==51);
+      c.width=1680;c.height=1050;c.fps_x100=3000;must(mpp_video_level(c)==42);
+
     }},
     {"h264_idr",[]{validate_au(au(),true);}},
     {"hevc_idr",[]{validate_au(au(Codec::hevc),true);}},

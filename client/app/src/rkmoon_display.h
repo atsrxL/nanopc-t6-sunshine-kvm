@@ -22,14 +22,16 @@ struct RkmoonDisplay {
                 const auto value = NvHTTP::getXmlString(xml, tag);
                 bool ok = false;
                 int number = value.toInt(&ok);
-                if (!ok || number <= 0 || QString::number(number) != value)
+                if (!ok || number <= 0)
                     throw std::runtime_error("Invalid server display dimensions or frame rate");
                 return number;
             };
             mode.width = positive("RKMoonDisplayWidth");
             mode.height = positive("RKMoonDisplayHeight");
             mode.fpsX100 = positive("RKMoonDisplayFpsX100");
-            if (mode.width > 4096 || mode.height > 2160 || mode.fpsX100 > 24000)
+            if (mode.width > 3840 || mode.height > 2160 ||
+                (mode.width % 2) || (mode.height % 2) ||
+                mode.fpsX100 < 100 || mode.fpsX100 > 12010)
                 throw std::runtime_error("Server display mode exceeds client limits");
         } else if (mode.status != "no_signal" && mode.status != "unsupported" && mode.status != "unavailable")
             throw std::runtime_error("Invalid server display status");

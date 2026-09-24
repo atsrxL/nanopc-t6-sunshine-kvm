@@ -348,8 +348,13 @@ def make_changes(original):
         elif path == "app/streaming/session.cpp":
             text = once(text, PUMP_ANCHOR, PUMP_ANCHOR + "        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);\n        if (RkmoonSessionControl::internalQuitPending.exchange(false)) goto DispatchDeferredCleanup;\n")
             text = once(text, "SDL_WaitEventTimeout(&event, 1000)", "SDL_WaitEventTimeout(&event, 20)")
-            text = once(text, '#include <QCursor>\n', '#include <QCursor>\n#include "rkmoon_session_control.h"\n')
+            text = once(text, '#include <QCursor>\n', '#include <QCursor>\n#include "rkmoon_session_control.h"\n#include "rkmoon_diagnostics.h"\n')
             text = once(text, TERMINATE_ANCHOR, '    RkmoonSessionControl::stop();\n')
+            text = once(text, 'void Session::clConnectionTerminated(int errorCode)\n{', 'void Session::clConnectionTerminated(int errorCode)\n{\n    RkmoonDiagnostics::record(QString("connection-terminated code=%1").arg(errorCode));')
+            text = once(text, 'void Session::clStageStarting(int stage)\n{', 'void Session::clStageStarting(int stage)\n{\n    RkmoonDiagnostics::record(QString("stage-start stage=%1").arg(stage));')
+            text = once(text, 'void Session::clStageFailed(int stage, int errorCode)\n{', 'void Session::clStageFailed(int stage, int errorCode)\n{\n    RkmoonDiagnostics::record(QString("stage-failed stage=%1 code=%2").arg(stage).arg(errorCode));')
+            text = once(text, '        case SDL_QUIT:\n', '        case SDL_QUIT:\n            RkmoonDiagnostics::record("sdl-quit-dispatched");\n')
+
             # Upstream SVG window icon is absent from this client; don't require QtSvg.
             text = once(text, '#include "backend/richpresencemanager.h"\n', '')
             text = once(text, '#include <QSvgRenderer>\n', '')

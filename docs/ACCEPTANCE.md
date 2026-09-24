@@ -1,6 +1,14 @@
 # 验收矩阵
 
+## 八模式 EDID 输入兼容性
+
+2026-09-24：最终8模式（首选1080p120）全部通过Znas RTX5060Ti→T6的实际输入锁定；不是新增模式的采集/编码/客户端验收。EDID已临时写入、未开机持久化；实际输出回到1080p60。详见 [逐项结果](EDID-EIGHT-MODES.md)。
+
+通用源模式服务端（ADR-009）已部署T6。真实采集+MPP硬编+独立解码：1440p120（HEVC/H.264）、1600p120、1280p90、4K60、4K30、1080p60、1080p30 通过；1080p120 未通过（CPU拷贝路径约108fps）。Moonlight客户端在这些新模式下的播放尚未验收。见 [扫测](../results/20260924-general-modes/HARDWARE-SWEEP.md)。
+
 ## 当前自动画面模式任务
+
+输入延迟与断线缓冲（ADR-010）：HID 改为持久 kvmd WebSocket、worker 采集5秒内自愈、bridge 丢帧等IDR。已构建（离线117项通过）并部署T6（rkmoon-kvm 8c7cbf8a…，worker 647c109e…）。客户端实测鼠标延迟和断线恢复：未测试。见 [ADR-010](ADR-010-input-stream-recovery.md)。
 
 2026-09-24 用户新增要求：Ctrl+Alt+Shift+C 显示本地指针；客户端自动跟随 HDMI 尺寸/帧率，设置仅有码率和编码。实现与本轮构建/部署证据单列于 [自动跟随记录](../results/20260924-1440p90/DISPLAY-FOLLOW.md)，不能把下方旧手动预设验收当作新功能验收。
 

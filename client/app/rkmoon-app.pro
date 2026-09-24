@@ -158,6 +158,7 @@ HEADERS += \
     $$PWD/src/rkmoon_audio_control.h \
     $$PWD/src/rkmoon_audio_keys.h \
     $$PWD/src/rkmoon_auth.h \
+    $$PWD/src/rkmoon_diagnostics.h \
     $$PWD/src/rkmoon_http_log.h
 
 RESOURCES += rkmoon.qrc

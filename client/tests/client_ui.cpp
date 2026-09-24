@@ -14,6 +14,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QFile>
+#include <QLabel>
 #include <QMetaObject>
 #include <QNetworkRequest>
 #include <QPushButton>
@@ -386,6 +387,99 @@ private slots:
             QCOMPARE(host.supportsRelativeMouse, advertised != "invalid");
         }
     }
+    void arbitrarySourceModesStayUncapped()
+    {
+        for (const auto mode : {QSize(1920,1280), QSize(2560,1600), QSize(3000,2000), QSize(3840,2160)}) {
+            for (int rate : {100, 5994, 7550, 9000, 12000}) {
+                auto xml = serverInfoXml(true);
+                xml.replace("2560", QByteArray::number(mode.width()));
+                xml.replace("1440", QByteArray::number(mode.height()));
+                xml.replace("8999", QByteArray::number(rate));
+                auto parsed = RkmoonDisplay::parse(xml);
+                KvmConfig config; config.width = parsed.width; config.height = parsed.height;
+                config.fps = (parsed.fpsX100 + 50) / 100;
+                auto& prefs = *StreamingPreferences::get(); config.applyTo(prefs);
+                QCOMPARE(prefs.width, mode.width()); QCOMPARE(prefs.height, mode.height());
+                QCOMPARE(prefs.fps, (rate + 50) / 100);
+            }
+        }
+        for (auto value : {QByteArray("3842"), QByteArray("1919")}) {
+            auto xml = serverInfoXml(true); xml.replace("2560", value);
+            QVERIFY_EXCEPTION_THROWN(RkmoonDisplay::parse(xml), std::runtime_error);
+        }
+    }
+    void pollTransportBudgetAndAuthFailClosed()
+    {
+        LoopbackServer server; QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto port = server.serverPort(); server.close();
+        KvmWindow window; window.m_config.address = "127.0.0.1";
+        window.m_config.httpPort = port; window.m_config.hostUuid.clear();
+        window.m_host.setPassword("kvm"); RkmoonAuth::bindTarget("127.0.0.1", port);
+        window.m_streaming = true; window.m_wantStream = true;
+        RkmoonSessionControl::initialize();
+        for (int n = 1; n <= 10; ++n) {
+            window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+            QCOMPARE(window.m_pollFailures, n);
+            QCOMPARE(RkmoonSessionControl::internalQuitPending.load(), n == 10);
+            QCOMPARE(window.m_wantStream, n < 10);
+        }
+        QVERIFY(server.listen(QHostAddress::LocalHost, port));
+        server.handler = [](const QByteArray&, const QByteArray&) { return serverInfoXml(false); };
+        RkmoonSessionControl::initialize(); window.m_pollFailures = 0; window.m_wantStream = true;
+        window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+        QVERIFY(!window.m_host.transientFailure);
+        QVERIFY(RkmoonSessionControl::internalQuitPending.load());
+        QVERIFY(!window.m_wantStream);
+        window.m_streaming = false; window.stopFollowing(); RkmoonSessionControl::initialize();
+    }
+    void unexpectedEndReconnectsWithBackoff()
+    {
+        KvmWindow window;
+        RkmoonSessionControl::initialize();
+        window.m_start->setEnabled(true);
+        window.m_wantStream = true;
+        window.m_sessionConnected = true; // Playback had connected, then ended unexpectedly.
+        const int delays[] = {1000, 2000, 4000, 8000, 8000};
+        for (int n = 1; n <= 5; ++n) {
+            window.sessionEnded();
+            QVERIFY(window.m_wantStream);
+            QCOMPARE(window.m_reconnectAttempt, n);
+            QVERIFY(window.m_reconnectPending && window.m_reconnectTimer.isActive());
+            QCOMPARE(window.m_reconnectTimer.interval(), delays[n - 1]);
+            QVERIFY(window.m_status->text().startsWith(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u6b63\u5728\u91cd\u8fde\uff08%1/5\uff09").arg(n)));
+            window.m_reconnectTimer.stop(); window.m_reconnectPending = false;
+            window.m_sessionConnected = false; // The relaunch failed before connecting.
+        }
+        window.sessionEnded();
+        QVERIFY(!window.m_wantStream && !window.m_reconnectTimer.isActive());
+        QCOMPARE(window.m_reconnectAttempt, 0);
+
+        // connectionStarted clears the counter; the next drop starts again at 1 s.
+        window.m_wantStream = true; window.m_sessionConnected = true;
+        window.sessionEnded(); window.sessionEnded();
+        QCOMPARE(window.m_reconnectAttempt, 2);
+        window.markConnected();
+        QCOMPARE(window.m_reconnectAttempt, 0);
+        QVERIFY(!window.m_reconnectTimer.isActive());
+        window.sessionEnded();
+        QCOMPARE(window.m_reconnectTimer.interval(), 1000);
+
+        // The main button cancels a pending reconnect.
+        QVERIFY(window.m_start->isEnabled());
+        window.startStream();
+        QVERIFY(!window.m_wantStream && !window.m_reconnectTimer.isActive());
+        QCOMPARE(window.m_reconnectAttempt, 0);
+
+        // User exit and a first launch that never connected do not auto-reconnect.
+        window.m_wantStream = true; window.m_sessionConnected = true;
+        RkmoonSessionControl::userQuit.store(true);
+        window.sessionEnded();
+        QVERIFY(!window.m_wantStream && !window.m_reconnectTimer.isActive());
+        RkmoonSessionControl::initialize();
+        window.m_wantStream = true; window.m_sessionConnected = false;
+        window.sessionEnded();
+        QVERIFY(!window.m_wantStream && !window.m_reconnectTimer.isActive());
+    }
     void quitReasonsAreThreadSafe()
     {
         RkmoonSessionControl::initialize();
@@ -491,6 +585,15 @@ private slots:
         QVERIFY(!window.m_restart);
         QVERIFY(!RkmoonSessionControl::internalQuitPending.load());
         fps = 6000;
+        window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+        QVERIFY(!window.m_restart); // First sighting of a new mode only arms the debounce.
+        QVERIFY(!RkmoonSessionControl::internalQuitPending.load());
+        fps = 5000;
+        window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+        QVERIFY(!window.m_restart); // A different mode during switching restarts the count.
+        fps = 6000;
+        window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+        QVERIFY(!window.m_restart);
         window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
         QVERIFY(window.m_restart);
         QVERIFY(RkmoonSessionControl::internalQuitPending.exchange(false));

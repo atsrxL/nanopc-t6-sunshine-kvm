@@ -42,7 +42,9 @@ def validate(path,stats,codec,width,height,fps,seconds,expected_range=None,expec
     else:result['limitations'].append('No independently established source range supplied; source/VUI agreement is not certified.')
     if expected_transfer:check['transfer_matches_source']=stream.get('color_transfer')==expected_transfer
     else:result['limitations'].append('No source transfer function supplied; source/VUI agreement is not certified.')
-    decode=subprocess.run(['ffmpeg','-v','error','-xerror','-threads','2','-i',str(path),'-map','0:v:0','-f','null','-'],capture_output=True,text=True,timeout=180)
+    # Raw Annex-B carries no container timestamps; give the demuxer the nominal rate so
+    # high-fps streams do not produce muxer DTS warnings that are unrelated to decoding.
+    decode=subprocess.run(['ffmpeg','-v','error','-xerror','-threads','2','-f',codec,'-framerate',f'{fps:g}','-i',str(path),'-map','0:v:0','-f','null','-'],capture_output=True,text=True,timeout=180)
     check['independent_complete_decode']=decode.returncode==0 and not decode.stderr.strip()
     result['decoder_diagnostics']=decode.stderr[:4000]
     with stats.open(newline='') as f:rows=[{k:int(v) for k,v in row.items()} for row in csv.DictReader(f)]

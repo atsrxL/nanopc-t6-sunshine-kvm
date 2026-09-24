@@ -26,8 +26,17 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <SDL.h>
+#include <algorithm>
 
 namespace {
+// Reconnect buffering. Transient serverinfo transport failures are tolerated for about
+// ten one-second polls during playback/recovery; an unexpected session end is retried
+// with 1/2/4/8/8 s backoff; a new source mode must be seen on two consecutive polls.
+constexpr int POLL_FAILURE_LIMIT = 10;
+constexpr int RECONNECT_LIMIT = 5;
+constexpr int RECONNECT_MAX_DELAY_MS = 8000;
+constexpr int MODE_STABLE_POLLS = 2;
+
 // Filter the reserved local controls so they cannot become remote key events.
 // Ctrl+Alt+Shift+Q/X/Z remain upstream session quit/fullscreen/release shortcuts.
 int SDLCALL localAudioKeys(void* context, SDL_Event* event)
@@ -45,8 +54,10 @@ struct ScopedAudioFilter {
 KvmWindow::KvmWindow() : m_host(m_config)
 {
     m_poll.setInterval(1000);
+    m_reconnectTimer.setSingleShot(true);
     RkmoonDiagnostics::record("window-created");
     connect(&m_poll, &QTimer::timeout, this, &KvmWindow::pollDisplay);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, &KvmWindow::reconnectNow);
     setWindowTitle(tr("RKMoon HDMI KVM"));
     setMinimumWidth(400);
     auto* layout = new QVBoxLayout(this);
@@ -129,6 +140,7 @@ void KvmWindow::updateStatus(const QString& status) { m_status->setText(status);
 
 void KvmWindow::closeEvent(QCloseEvent* event)
 {
+    RkmoonDiagnostics::record(QString("qt-close busy=%1").arg(m_connecting || m_streaming || m_pollBusy));
     // Never let QApplication terminate while a connection attempt or upstream
     // deferred session cleanup still references this window and host.
     if (m_connecting || m_streaming || m_pollBusy) event->ignore();
@@ -140,6 +152,10 @@ void KvmWindow::stopFollowing()
     m_wantStream = false;
     m_restart = false;
     m_poll.stop();
+    m_reconnectTimer.stop();
+    m_reconnectPending = false;
+    m_reconnectAttempt = 0;
+    m_pendingModePolls = 0;
 }
 
 void KvmWindow::connectHost()
@@ -165,7 +181,6 @@ void KvmWindow::connectHost()
             if (!appError.isEmpty()) { updateStatus(appError); return; }
             m_start->setEnabled(true);
             m_wantStream = true;
-            m_disconnectChecks = 0;
             m_poll.start();
             pollDisplay();
         }, true);
@@ -183,8 +198,16 @@ void KvmWindow::pollDisplay()
             ++m_pollFailures;
             RkmoonDiagnostics::record(QString("poll-failure transient=%1 count=%2 streaming=%3 cleanup=%4")
                 .arg(m_host.transientFailure).arg(m_pollFailures).arg(m_streaming).arg(m_cleanup));
-            if (m_host.transientFailure && m_streaming && !m_cleanup && m_pollFailures < 3) {
-                updateStatus(tr("Display status temporarily unavailable; retrying (%1/3)").arg(m_pollFailures));
+            // Only transport-level failures while playing or recovering are buffered;
+            // authentication, identity and protocol rejections stop immediately.
+            if (m_host.transientFailure && m_wantStream && !m_streaming && m_reconnectAttempt > 0) {
+                // Recovering after an unexpected end: the backoff schedule owns the
+                // retry budget. Waiting polls are ignored; a failed attempt advances it.
+                if (!m_reconnectPending) { m_sessionError = error; scheduleReconnect(); }
+                return;
+            }
+            if (m_host.transientFailure && m_wantStream && m_streaming && m_pollFailures < POLL_FAILURE_LIMIT) {
+                updateStatus(tr("Display status temporarily unavailable; retrying (%1/%2)").arg(m_pollFailures).arg(POLL_FAILURE_LIMIT));
                 return;
             }
             m_sessionError = error;
@@ -196,26 +219,25 @@ void KvmWindow::pollDisplay()
         }
         m_pollFailures = 0;
         const auto mode = m_host.display;
-        if (!mode.ready()) m_disconnectChecks = 0;
         m_start->setText(m_wantStream && !m_streaming ? tr("Cancel / Stop waiting") : tr("View HDMI"));
-        if (m_sessionError.isEmpty()) updateStatus(mode.ready() ? tr("HDMI %1 × %2 @ %3 Hz").arg(mode.width).arg(mode.height).arg(mode.fpsX100 / 100.0)
+        if (m_sessionError.isEmpty() && (m_reconnectAttempt == 0 || !mode.ready())) updateStatus(mode.ready() ? tr("HDMI %1 × %2 @ %3 Hz").arg(mode.width).arg(mode.height).arg(mode.fpsX100 / 100.0)
                                  : tr("Waiting for HDMI: %1").arg(mode.status));
         if (RkmoonSessionControl::userQuit.load() && m_streaming) m_wantStream = false;
-        if (m_streaming && m_wantStream && !m_cleanup && mode != m_runningMode && !m_restart) {
-            m_restart = m_wantStream;
-            RkmoonDiagnostics::record(QString("display-change old=%1x%2/%3 new=%4x%5/%6")
-                .arg(m_runningMode.width).arg(m_runningMode.height).arg(m_runningMode.fpsX100)
+        if (m_streaming && m_wantStream && !m_cleanup && !m_restart) {
+            if (mode == m_runningMode) { m_pendingModePolls = 0; return; }
+            // Debounce HDMI switching: restart only after the same new mode is
+            // reported by consecutive polls.
+            if (m_pendingModePolls > 0 && mode == m_pendingMode) ++m_pendingModePolls;
+            else { m_pendingMode = mode; m_pendingModePolls = 1; }
+            RkmoonDiagnostics::record(QString("display-change-seen polls=%1 old=%2x%3/%4 new=%5x%6/%7")
+                .arg(m_pendingModePolls).arg(m_runningMode.width).arg(m_runningMode.height).arg(m_runningMode.fpsX100)
                 .arg(mode.width).arg(mode.height).arg(mode.fpsX100));
+            if (m_pendingModePolls < MODE_STABLE_POLLS) return;
+            m_pendingModePolls = 0;
+            m_restart = true;
+            RkmoonDiagnostics::record("display-change-restart");
             RkmoonSessionControl::stop();
-        } else if (!m_streaming && m_wantStream && mode.ready()) {
-            if (m_disconnectChecks > 0 && mode == m_runningMode) {
-                if (--m_disconnectChecks == 0) {
-                    m_wantStream = false;
-                    if (m_sessionError.isEmpty()) updateStatus(tr("Stream ended; click View HDMI to retry."));
-                }
-                return;
-            }
-            m_disconnectChecks = 0;
+        } else if (!m_streaming && m_wantStream && !m_reconnectPending && mode.ready()) {
             QTimer::singleShot(0, this, &KvmWindow::runStream);
         }
     });
@@ -225,10 +247,92 @@ void KvmWindow::startStream()
 {
     if (m_streaming || m_connecting || !m_start->isEnabled()) return;
     if (m_wantStream) { stopFollowing(); updateStatus(tr("Automatic connection cancelled")); return; }
-    m_disconnectChecks = 0;
+    stopFollowing();
     m_wantStream = true;
     m_poll.start();
     pollDisplay();
+}
+
+void KvmWindow::markConnected()
+{
+    RkmoonDiagnostics::record(QString("connection-started reconnectAttempt=%1").arg(m_reconnectAttempt));
+    m_sessionConnected = true;
+    m_reconnectAttempt = 0;
+    m_pollFailures = 0;
+    m_reconnectPending = false;
+    m_reconnectTimer.stop();
+    updateStatus(tr("HDMI stream connected"));
+}
+
+void KvmWindow::sessionEnded()
+{
+    if (RkmoonSessionControl::userQuit.load()) m_wantStream = false;
+    const bool restart = m_restart;
+    m_restart = false;
+    m_pendingModePolls = 0;
+    if (!m_wantStream) {
+        // User exit, authentication/identity/protocol stop, or cancelled follow.
+        m_reconnectTimer.stop();
+        m_reconnectPending = false;
+        m_reconnectAttempt = 0;
+        if (m_status->text() == tr("HDMI stream connected")) updateStatus(tr("Stream ended; reconnect to resume."));
+        return;
+    }
+    if (restart) return; // Confirmed source mode change: the next ready poll relaunches.
+    if (!m_sessionConnected && m_reconnectAttempt == 0) {
+        // First launch never connected: report the launch failure, do not loop.
+        RkmoonDiagnostics::record("launch-ended-before-connect");
+        stopFollowing();
+        m_start->setText(tr("View HDMI"));
+        if (m_sessionError.isEmpty()) updateStatus(tr("Stream ended; click View HDMI to retry."));
+        return;
+    }
+    scheduleReconnect();
+}
+
+void KvmWindow::launchFailed(const QString& status, bool transport)
+{
+    show(); m_streaming = false; m_host.streaming = false; m_cleanup = false;
+    m_connect->setEnabled(true); m_start->setEnabled(true);
+    updateMouseModeEnabled();
+    m_sessionError = status;
+    // A transport failure while already recovering continues the backoff; any
+    // HTTP/protocol refusal (including authentication) stops following.
+    if (transport && m_wantStream && m_reconnectAttempt > 0) { scheduleReconnect(); return; }
+    stopFollowing();
+    m_start->setText(tr("View HDMI"));
+    updateStatus(status);
+}
+
+void KvmWindow::scheduleReconnect()
+{
+    if (m_reconnectAttempt >= RECONNECT_LIMIT) {
+        RkmoonDiagnostics::record(QString("reconnect-exhausted attempts=%1").arg(m_reconnectAttempt));
+        const QString detail = m_sessionError;
+        stopFollowing();
+        m_start->setText(tr("View HDMI"));
+        updateStatus(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u81ea\u52a8\u91cd\u8fde %1 \u6b21\u672a\u6210\u529f\uff1b\u8bf7\u70b9\u51fb View HDMI \u91cd\u8bd5\u3002").arg(RECONNECT_LIMIT)
+                     + (detail.isEmpty() ? QString() : QStringLiteral("\n") + detail));
+        return;
+    }
+    ++m_reconnectAttempt;
+    const int delay = std::min(1000 << (m_reconnectAttempt - 1), RECONNECT_MAX_DELAY_MS);
+    RkmoonDiagnostics::record(QString("reconnect-scheduled attempt=%1 delayMs=%2").arg(m_reconnectAttempt).arg(delay));
+    m_reconnectPending = true;
+    m_reconnectTimer.start(delay);
+    if (!m_poll.isActive()) m_poll.start();
+    m_start->setText(tr("Cancel / Stop waiting"));
+    m_start->setEnabled(true);
+    updateStatus(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u6b63\u5728\u91cd\u8fde\uff08%1/%2\uff09").arg(m_reconnectAttempt).arg(RECONNECT_LIMIT)
+                 + (m_sessionError.isEmpty() ? QString() : QStringLiteral("\n") + m_sessionError));
+}
+
+void KvmWindow::reconnectNow()
+{
+    if (!m_wantStream || m_streaming || !m_reconnectPending) return;
+    m_reconnectPending = false;
+    RkmoonDiagnostics::record(QString("reconnect-attempt attempt=%1").arg(m_reconnectAttempt));
+    pollDisplay(); // Re-validates password/identity/mode before relaunch.
 }
 
 void KvmWindow::runStream()
@@ -249,6 +353,7 @@ void KvmWindow::runStream()
         m_config.height = m_runningMode.height;
         m_config.fps = (m_runningMode.fpsX100 + 50) / 100;
         m_restart = false;
+        m_sessionConnected = false;
         m_sessionError.clear();
         RkmoonDiagnostics::record(QString("session-start currentGameId=%1 appId=%2 width=%3 height=%4 fps=%5")
             .arg(m_host.computer()->currentGameId).arg(app.id).arg(m_config.width).arg(m_config.height).arg(m_config.fps));
@@ -261,7 +366,7 @@ void KvmWindow::runStream()
             updateStatus(m_sessionError);
         });
         connect(&session, &Session::displayLaunchError, this, [this](const QString& text) { m_sessionError = text; RkmoonDiagnostics::record("session-error-signal"); updateStatus(text); });
-        connect(&session, &Session::connectionStarted, this, [this] { updateStatus(tr("HDMI stream connected")); });
+        connect(&session, &Session::connectionStarted, this, [this] { markConnected(); });
         // Upstream LiStopConnection/quitApp runs in DeferredSessionCleanupTask after
         // exec() returns. The Session and NvComputer must outlive readyForDeletion.
         QEventLoop cleanupWait;
@@ -289,37 +394,21 @@ void KvmWindow::runStream()
         m_host.streaming = false;
         m_streaming = false;
         updateMouseModeEnabled();
-        if (RkmoonSessionControl::userQuit.load()) m_wantStream = false;
-        m_disconnectChecks = m_wantStream && !m_restart ? 3 : 0;
-        m_restart = false;
         m_connect->setEnabled(true);
         m_start->setEnabled(true);
         m_config.volumePercent = RkmoonAudioControl::volumePercent();
         m_config.muted = RkmoonAudioControl::isMuted();
         m_config.save();
-        if (m_status->text() == tr("HDMI stream connected")) updateStatus(tr("Stream ended; reconnect to resume."));
+        sessionEnded();
     }
     catch (const GfeHttpResponseException& e) {
-        show(); m_streaming = false; m_host.streaming = false; m_cleanup = false;
-        m_connect->setEnabled(true); m_start->setEnabled(true);
-        m_wantStream = false;
-        updateStatus(tr("Stream refused: %1").arg(e.toQString()));
+        launchFailed(tr("Stream refused: %1").arg(e.toQString()), false);
     }
     catch (const QtNetworkReplyException& e) {
-        show(); m_streaming = false; m_host.streaming = false; m_cleanup = false;
-        m_connect->setEnabled(true); m_start->setEnabled(true);
-        m_wantStream = false;
-        updateStatus(tr("Stream refused: %1").arg(e.toQString()));
+        launchFailed(tr("Stream refused: %1").arg(e.toQString()), true);
     }
     catch (const std::exception& e) {
-        show();
-        m_cleanup = false; m_start->setEnabled(true);
-        m_host.streaming = false;
-        m_streaming = false;
-        updateMouseModeEnabled();
-        m_connect->setEnabled(true);
-        m_wantStream = false;
-        updateStatus(tr("Stream refused: %1").arg(QString::fromUtf8(e.what())));
+        launchFailed(tr("Stream refused: %1").arg(QString::fromUtf8(e.what())), false);
     }
 }
 

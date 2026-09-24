@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "status": "live-edid-input-lock-tested-not-boot-persistent",
+  "preferred_mode": {"width": 1920, "height": 1080, "refresh_hz": 120},
+  "modes": [
+    {"width": 1920, "height": 1080, "refresh_hz": [30, 60, 120]},
+    {"width": 1920, "height": 1280, "refresh_hz": [90]},
+    {"width": 2560, "height": 1440, "refresh_hz": [120]},
+    {"width": 2560, "height": 1600, "refresh_hz": [120]},
+    {"width": 3840, "height": 2160, "refresh_hz": [30, 60]}
+  ],
+  "notes": [
+    "Final user list contains eight modes; 1920x1280 is intentional as written.",
+    "Eight modes signal-lock tested on T6 with RTX5060Ti. Preferred 1920x1080@120; actual output restored to 1080p60 for streaming compatibility.",
+    "Inspected vendor receiver driver limits EDID to two 128-byte blocks.",
+    "Current streaming validation accepts approximately 60Hz, plus explicitly enabled 2560x1440 approximately 90Hz.",
+    "Mode advertisement, HDMI reception, encoding and client playback require separate validation."
+  ]
+}

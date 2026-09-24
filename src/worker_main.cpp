@@ -5,10 +5,13 @@
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sys/prctl.h>
+#include <thread>
 #include <unistd.h>
 namespace {
 volatile sig_atomic_t stopping=0;void stop(int){stopping=1;}
+struct ModeChanged:std::runtime_error{using std::runtime_error::runtime_error;};
 uint32_t number(const std::string& s){uint32_t n{};auto r=std::from_chars(s.data(),s.data()+s.size(),n);if(r.ec!=std::errc{}||r.ptr!=s.data()+s.size())throw std::runtime_error("invalid numeric argument");return n;}
 void write_file(int fd,const std::vector<uint8_t>& data){size_t at=0;while(at<data.size()){auto n=write(fd,data.data()+at,data.size()-at);if(n<0&&errno==EINTR)continue;if(n<=0)throw std::runtime_error("output file write failed");at+=size_t(n);}}
 }
@@ -19,7 +22,7 @@ int main(int argc,char** argv){
   bool probe=false,allow_copy=false,authorized=false;
   try {
     for(int i=1;i<argc;++i){std::string k=argv[i];
-      if(k=="--help"){std::cout<<"rkmoon-worker --device /dev/videoN --codec hevc|h264 --width 1920 --height 1080 --fps-x100 6000 --bitrate 20000000 --gop 60 --seconds 60 --output NEW_FILE --stats NEW_CSV --ack-capture-ownership [--allow-copy]\n1440p90 experiment only: --width 2560 --height 1440 --fps-x100 9000 --allow-1440p90-experiment\nHardware-only capability probe: --probe (no HDMI capture; emits synthetic black into MPP)\nInternal: --ipc-fd FD; one AU per ACK, K/bitrate/stop control messages\n";return 0;}
+      if(k=="--help"){std::cout<<"rkmoon-worker --device /dev/videoN --codec hevc|h264 --width 1920 --height 1080 --fps-x100 6000 --bitrate 20000000 --gop 60 --seconds 60 --output NEW_FILE --stats NEW_CSV --ack-capture-ownership [--allow-copy]\nEven 64..3840 x 64..2160, 1..120.10fps; throughput capped at 3840x2160x60.10. Legacy --allow-1440p90-experiment accepted.\nHardware-only capability probe: --probe (no HDMI capture; emits synthetic black into MPP)\nInternal: --ipc-fd FD; one AU per ACK, K/bitrate/stop control messages\n";return 0;}
       if(k=="--probe"){probe=true;continue;}if(k=="--allow-copy"){allow_copy=true;continue;}if(k=="--ack-capture-ownership"){authorized=true;continue;}
       if(k=="--allow-1440p90-experiment"){c.allow_1440p90_experiment=true;continue;}
       if(++i>=argc)throw std::runtime_error("missing option value");
@@ -50,23 +53,62 @@ int main(int argc,char** argv){
     Fd statfd;if(!stats.empty()){statfd.reset(open(stats.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600));if(statfd.get()<0)throw std::runtime_error("stats already exist/cannot create");}
     auto emit=[&](const std::string& s){if(statfd.get()>=0)write_file(statfd.get(),std::vector<uint8_t>(s.begin(),s.end()));};
     emit("seq,driver_seq,driver_timestamp_us,driver_timestamp_flags,dequeue_us,submit_us,done_us,bytes,idr,raw_skipped,dmabuf\n");
-    Capture cap(device);cap.describe();cap.validate(c);cap.start(direct_layout(cap.layout));
     // Destruction order is intentional: enc dies before cap on all exits, including exceptions.
-    Encoder enc;enc.open(c,cap.layout,&cap.buffers(),allow_copy);
+    std::unique_ptr<Capture> capture;std::unique_ptr<Encoder> encoder;
+    auto open_pipeline=[&]{
+      auto next=std::make_unique<Capture>(device);next->describe();
+      // A different source mode is not a transient fault: the client must renegotiate.
+      try{next->validate(c);}catch(const std::exception& e){throw ModeChanged(e.what());}
+      next->start(direct_layout(next->layout));
+      auto e=std::make_unique<Encoder>();e->open(c,next->layout,&next->buffers(),allow_copy);
+      encoder.reset();capture=std::move(next);encoder=std::move(e);
+    };
+    open_pipeline();
+    // Transient HDMI capture faults (frame timeout, DQBUF errors) are recovered inside the worker:
+    // tear down encoder then capture, reopen with the SAME negotiated mode, continue the AU sequence
+    // and force an IDR. A changed/lost source is still fatal after the bounded recovery window.
+    constexpr uint64_t recovery_window_us=5000000;uint64_t recovering_since=0;uint32_t recoveries=0;
+    auto recover=[&](const std::exception& e){
+      auto now=now_us();if(!recovering_since)recovering_since=now;
+      if(now-recovering_since>recovery_window_us)throw std::runtime_error(std::string("capture recovery window exceeded: ")+e.what());
+      std::cerr<<"{\"kind\":\"capture_recover\",\"attempt\":"<<++recoveries<<",\"reason\":\""<<e.what()<<"\"}\n";
+      auto last=encoder?encoder->sequence():0;
+      encoder.reset();capture.reset();
+      std::this_thread::sleep_for(100ms);
+      if(stopping)return;
+      try{open_pipeline();encoder->continue_sequence(last);}
+      catch(const ModeChanged&){throw;}
+      catch(const std::exception& again){std::cerr<<"{\"kind\":\"capture_recover_failed\",\"reason\":\""<<again.what()<<"\"}\n";encoder.reset();capture.reset();}
+    };
     if(ipc>=0){Message m;m.h.kind=Kind::ready;m.h.width=c.width;m.h.height=c.height;m.h.codec=c.codec;m.h.extra=c.fps_x100;send(ipc,m,2s);}
-    auto start=now_us(),last_check=start;bool force=true,sent_test_idr=false;uint64_t count=0;
+    auto start=now_us(),last_check=start;bool force=true,sent_test_idr=false;uint64_t count=0;uint32_t pending_bitrate=0;
+    auto set_bitrate=[&](uint32_t bps){pending_bitrate=bps;if(encoder){encoder->bitrate(bps);pending_bitrate=0;}force=true;};
     while(!stopping&&(ipc>=0||now_us()-start<uint64_t(seconds)*1000000)){
       if(ipc>=0){ // Drain queued controls BEFORE picking the next raw frame.
         while(readable(ipc,0ms)){
           auto ctl=receive(ipc,100ms);
           if(ctl.h.kind==Kind::stop)return 0;
           if(ctl.h.kind==Kind::idr)force=true;
-          else if(ctl.h.kind==Kind::bitrate){enc.bitrate(ctl.h.extra);force=true;}
+          else if(ctl.h.kind==Kind::bitrate)set_bitrate(ctl.h.extra);
           else throw std::runtime_error("unexpected control before frame");
         }
       }
+      if(!encoder){ // Previous reopen failed; keep retrying inside the bounded window.
+        recover(std::runtime_error("capture reopen pending"));
+        if(encoder){force=true;if(pending_bitrate)set_bitrate(pending_bitrate);}
+        continue;
+      }
+      auto& cap=*capture;auto& enc=*encoder;
       if(!sent_test_idr&&idr_at&&now_us()-start>=uint64_t(idr_at)*1000000){force=true;sent_test_idr=true;}
-      auto raw=cap.latest(1000ms);auto frame=enc.encode(raw,&cap.buffer(raw.index),force);force=false;
+      Capture::Frame raw{};
+      try{raw=cap.latest(1000ms);}
+      catch(const std::exception& e){
+        recover(e);
+        if(encoder){force=true;if(pending_bitrate)set_bitrate(pending_bitrate);}
+        continue;
+      }
+      auto frame=enc.encode(raw,&cap.buffer(raw.index),force);force=false;
+      recovering_since=0;
       cap.release(raw.index); // ONLY after full AU completion, never on encoder error.
       ++count;if(file.get()>=0)write_file(file.get(),frame.bytes);
       auto& h=frame.h;emit(std::to_string(h.seq)+","+std::to_string(raw.sequence)+","+std::to_string(raw.driver_us)+","+std::to_string(raw.flags&V4L2_BUF_FLAG_TIMESTAMP_MASK)+","+std::to_string(h.dequeue_us)+","+std::to_string(h.submit_us)+","+std::to_string(h.done_us)+","+std::to_string(h.size)+","+std::to_string(bool(h.flags&flag_idr))+","+std::to_string(cap.raw_skipped)+","+std::to_string(enc.direct())+"\n");
@@ -79,14 +121,16 @@ int main(int argc,char** argv){
           switch(ctl.h.kind){
             case Kind::ack:if(ctl.h.seq!=h.seq)throw std::runtime_error("ACK sequence mismatch");ack=true;break;
             case Kind::idr:force=true;break;
-            case Kind::bitrate:enc.bitrate(ctl.h.extra);force=true;break;
+            case Kind::bitrate:set_bitrate(ctl.h.extra);break;
             case Kind::stop:return 0;
             default:throw std::runtime_error("unexpected worker control");
           }
         }
       }
       if(now_us()-last_check>=1000000){
-        cap.unchanged();last_check=now_us();
+        try{cap.unchanged();}
+        catch(const std::exception& e){last_check=now_us();recover(e);if(encoder){force=true;if(pending_bitrate)set_bitrate(pending_bitrate);}continue;}
+        last_check=now_us();
         std::cerr<<"{\"kind\":\"stats\",\"encoded\":"<<count<<",\"raw_skipped\":"<<cap.raw_skipped<<",\"elapsed_us\":"<<last_check-start<<",\"dequeue_to_au_us\":"<<h.done_us-h.dequeue_us<<",\"au_bytes\":"<<h.size<<"}\n";
       }
     }

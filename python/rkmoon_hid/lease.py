@@ -59,8 +59,11 @@ def chunks(x,y):
         a=max(-127,min(127,x)); b=max(-127,min(127,y)); yield a,b; x-=a;y-=b
 
 class Lease:
-    def __init__(self, backend, mouse_mode="relative"):
+    def __init__(self, backend, mouse_mode="relative", events=None):
+        # events: optional low-latency ordered stream (kvmd websocket). Releases always use the
+        # acknowledged HTTP backend so a failed stream can never leave a key or button down.
         self.backend=backend
+        self.events=events or backend
         self.mouse_mode=mouse_mode
         self.virtual=set() # Down VK aliases, only in memory. Never log or persist these sets.
         self.possibly_down=set(); self.buttons=set()
@@ -76,32 +79,36 @@ class Lease:
                 self.virtual.add(vk)
                 if not already:
                     self.possibly_down.add(key) # BEFORE request; timeout may still have applied it.
-                    await self.backend.key(key,True)
+                    await self.events.key(key,True)
             else:
                 self.virtual.discard(vk)
                 if not any(KEYS[v]==key for v in self.virtual) and key in self.possibly_down:
-                    await self.backend.key(key,False);self.possibly_down.discard(key)
+                    await self.events.key(key,False);self.possibly_down.discard(key)
         elif op=="button":
             b=BUTTONS[e["button"]]
             if e["down"]:
                 if b not in self.buttons:
-                    self.buttons.add(b);await self.backend.button(b,True)
+                    self.buttons.add(b);await self.events.button(b,True)
             elif b in self.buttons:
-                await self.backend.button(b,False);self.buttons.discard(b)
+                await self.events.button(b,False);self.buttons.discard(b)
         elif op=="move":
             if self.mouse_mode!="relative":raise InputError("motion differs from lease mode")
-            for x,y in chunks(e["x"],e["y"]):
-                await self.backend.move(x,y)
+            if hasattr(self.events,"move_many"):
+                parts=list(chunks(e["x"],e["y"]))
+                if parts:await self.events.move_many(parts)
+            else:
+                for x,y in chunks(e["x"],e["y"]):
+                    await self.events.move(x,y)
         elif op=="absolute":
             if self.mouse_mode!="absolute":raise InputError("motion differs from lease mode")
-            await self.backend.absolute(e["x"],e["y"])
+            await self.events.absolute(e["x"],e["y"])
         elif op=="wheel":
             self.wheel_x+=e["x"];self.wheel_y+=e["y"]
             # Truncate toward zero so fractional negative scrolling is not rounded to a full notch.
             x=int(self.wheel_x/120);y=int(self.wheel_y/120)
             self.wheel_x-=x*120;self.wheel_y-=y*120
             for a,b in chunks(x,y):
-                await self.backend.wheel(a,b)
+                await self.events.wheel(a,b)
     async def release(self):
         self.virtual.clear();self.wheel_x=self.wheel_y=0
         # Failed releases remain tracked and block the next lease until the retry succeeds.

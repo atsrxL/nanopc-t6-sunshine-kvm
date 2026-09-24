@@ -39,6 +39,8 @@ struct Encoder::Impl {
 };
 Encoder::Encoder()=default;Encoder::~Encoder()=default;
 bool Encoder::direct() const{return p_&&p_->direct;}
+uint64_t Encoder::sequence() const{return p_?p_->seq:0;}
+void Encoder::continue_sequence(uint64_t last){if(!p_)throw std::runtime_error("encoder not open");p_->seq=last;}
 void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Buffer>* bufs,bool allow_copy) {
   if(p_)throw std::runtime_error("encoder already open");
   c.validate();
@@ -125,9 +127,17 @@ Message Encoder::encode(const Capture::Frame& raw,Capture::Buffer* capture,bool 
           if(p.format==MPP_FMT_BGR888){
             // Preserve BGR for MPP's hardware color conversion. Sequential
             // copies avoid expensive repeated reads of uncached V4L2 MMAP.
-            std::memset(dst,0,size_t(p.hs)*p.vs);
-            for(uint32_t y=0;y<p.c.height;++y)
-              std::memcpy(dst+size_t(y)*p.hs,src+size_t(y)*p.source.stride,size_t(p.c.width)*3);
+            // Only the alignment padding needs clearing; visible rows are fully overwritten.
+            const size_t row=size_t(p.c.width)*3;
+            if(p.hs==p.source.stride&&row==p.hs){
+              std::memcpy(dst,src,row*p.c.height);
+            }else{
+              for(uint32_t y=0;y<p.c.height;++y){
+                std::memcpy(dst+size_t(y)*p.hs,src+size_t(y)*p.source.stride,row);
+                if(p.hs>row)std::memset(dst+size_t(y)*p.hs+row,0,p.hs-row);
+              }
+            }
+            if(p.vs>p.c.height)std::memset(dst+size_t(p.c.height)*p.hs,0,size_t(p.hs)*(p.vs-p.c.height));
           }else{
             if(!p.rgb_scratch.empty()) {
               std::memcpy(p.rgb_scratch.data(),src,p.source.sizeimage);

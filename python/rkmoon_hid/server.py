@@ -22,7 +22,7 @@ class Server:
         await asyncio.wait_for(writer.drain(),0.2)
     async def handle(self, reader, writer):
         task=asyncio.current_task();self.handlers.add(task)
-        lease=None;owns=False;workers=[]
+        lease=None;owns=False;workers=[];stream=None
         try:
             credentials=writer.get_extra_info("socket").getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12)
             _,uid,_=struct.unpack("3i",credentials)
@@ -43,7 +43,11 @@ class Server:
             # The prior owner has released all tracked state before busy can clear.
             # Select before acknowledging: even the first button/wheel uses this output.
             await asyncio.wait_for(self.backend.select_mouse(mode),1.5)
-            lease=Lease(self.backend,mode);queue=Queue(64);last=time.monotonic()
+            if hasattr(self.backend,"open_stream"):
+                try:stream=await self.backend.open_stream()
+                except Exception:
+                    stream=None;LOG.warning("kvmd websocket unavailable; using per-event HTTP input")
+            lease=Lease(self.backend,mode,stream);queue=Queue(256);last=time.monotonic()
             await self.reply(writer,True)
             async def read_events():
                 nonlocal last
@@ -76,6 +80,11 @@ class Server:
             writer.close()
             try:await writer.wait_closed()
             except (OSError,ConnectionError):pass
+            if stream is not None:
+                # Make every streamed event reach kvmd before the HTTP releases below.
+                try:await stream.flush()
+                except Exception:await asyncio.sleep(0.05)
+                await stream.close()
             if owns:
                 self.active_writer=None
                 if lease is not None and not await lease.release():

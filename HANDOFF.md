@@ -1,5 +1,7 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> EDID最新：用户最终8模式、首选1080p120已写入T6并读回一致；Znas RTX5060Ti通过Windows枚举切换，8模式全部接收锁定（含1440p120/1600p120/4K60）。仅输入时序验收，未做新增模式采集编码。测试后实际输出1080p60，EDID首选仍120Hz，未配置开机持久化。见 [EDID实测](docs/EDID-EIGHT-MODES.md)。
+
 > 2026-09-24 最新状态：用户确认当前客户端在线且可用，保留现场会话。此前偶发断开/View HDMI失败仍未定位；T6持续约90fps并收到客户端心跳，RTSP重试出现tag校验失败。源码包含尚未构建交付的生命周期诊断与短暂metadata失败容错草稿，不代表故障已修复。用户要求上传全部最新源码；Target现用0fb281698fd2目录不随此次源码提交替换。
 
 > 最新客户端0fb281698fd2已去掉嵌套common Connection.c的连接相对微移（前版导致绝对租约退出），全新Windows构建、Qt22/22。鼠标模式已移到主GUI。Target仅保留可运行目录RKMoon-Windows-x64，40文件读回校验，旧客户端ZIP/sidecar已清理，真实串流待用户复测。
@@ -94,3 +96,13 @@
 ## 下一步顺序
 
 执行 CODEX_START.md；不再扩展功能优先级。先全量构建、P1 的真实 1080p60 HEVC/H264，再 P2 video-only，最后 P3。每项未测试保持未测试，不拿旧日志替代。
+
+## 通用源模式部署（2026-09-24）
+
+T6 已运行 ADR-009 通用模式服务端：/home/at/rkmoon-custom-modes/rkmoon-kvm（b3819478…）+ worker（18164eaa…，拷贝路径去掉整缓冲 memset）。
+实机扫测见 results/20260924-general-modes/HARDWARE-SWEEP.md：除 1080p120（CPU 拷贝约108fps）外，8个EDID模式采集+硬编+独立解码均通过。
+EDID 未做开机持久化；T6 重启后需重新写入。Znas 上临时计划任务 RKMoon-Select-Mode 已清理，当前源为 1080p120。
+
+## 输入/断线缓冲部署（2026-09-24，ADR-010）
+
+T6 当前运行 /home/at/rkmoon-r3/（rkmoon-kvm 8c7cbf8a…，worker 647c109e…），HID Python 已更新到 /home/at/rkmoon-http-1440p90/python/rkmoon_hid（WebSocket 事件流）。回滚：/root/agent.backup/rkmoon-r3-20260924/ 下的 runtime.json 和 rkmoon_hid，旧二进制仍在 /home/at/rkmoon-custom-modes/。客户端实测未完成。

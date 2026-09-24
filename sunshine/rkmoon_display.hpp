@@ -16,10 +16,17 @@ struct display_info {
   const char* status="unavailable";
   uint32_t width=0,height=0,fps_x100=0;
 };
+inline uint32_t effective_capture_fps(uint32_t width,uint32_t height,uint32_t requested,const display_info& source) {
+  // Only integer transport aliases may normalize. Explicit fractional requests remain exact.
+  if(std::strcmp(source.status,"ready")==0&&source.width==width&&source.height==height&&
+     requested%100==0&&requested/100==(source.fps_x100+50)/100)return source.fps_x100;
+  return requested;
+}
 inline bool display_flag(const char* name) {
   const char* s=std::getenv(name);return s&&std::strcmp(s,"1")==0;
 }
 inline display_info describe_timing(const v4l2_dv_timings& t,bool high,bool ninety) {
+  (void)ninety; // Legacy flag accepted; no longer a mode gate.
   display_info d;d.status="unsupported";
   if(t.type!=V4L2_DV_BT_656_1120||t.bt.interlaced)return d;
   const auto& b=t.bt;
@@ -29,7 +36,7 @@ inline display_info describe_timing(const v4l2_dv_timings& t,bool high,bool nine
   uint64_t total=totalw*totalh;uint64_t fps=(b.pixelclock*100+total/2)/total;
   if(b.width<64||b.width>3840||b.height<64||b.height>2160||(b.width&1)||(b.height&1))return d;
   if(!high&&(b.width!=1920||b.height!=1080))return d;
-  if(!((fps>=5900&&fps<=6010)||(high&&ninety&&b.width==2560&&b.height==1440&&fps>=8900&&fps<=9010)))return d;
+  if(fps<100||fps>12010||uint64_t(b.width)*b.height*fps>3840ULL*2160*6010)return d;
   d.status="ready";d.width=b.width;d.height=b.height;d.fps_x100=uint32_t(fps);return d;
 }
 inline display_info current_display() {

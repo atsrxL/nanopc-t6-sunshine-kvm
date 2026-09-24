@@ -37,9 +37,8 @@ void io(int fd,uint8_t* data,size_t n,bool writing,uint64_t deadline) {
 void Config::validate() const {
   if(codec!=Codec::h264 && codec!=Codec::hevc) throw std::runtime_error("unsupported codec");
   if(width<64||height<64||width>3840||height>2160||(width&1)||(height&1)) throw std::runtime_error("invalid dimensions");
-  const bool sixty=fps_x100>=5900&&fps_x100<=6010;
-  const bool ninety=allow_1440p90_experiment&&width==2560&&height==1440&&fps_x100>=8900&&fps_x100<=9010;
-  if(!sixty&&!ninety) throw std::runtime_error("only ~60 Hz or authorized 2560x1440 ~90 Hz experiment accepted");
+  if(fps_x100<100||fps_x100>12010) throw std::runtime_error("invalid framerate");
+  if(uint64_t(width)*height*fps_x100>3840ULL*2160*6010) throw std::runtime_error("pixel throughput exceeds 4K60.10 budget");
   if(bitrate<1000000||bitrate>35000000||!gop||gop>120) throw std::runtime_error("invalid bitrate/GOP");
 }
 int mpp_video_level(const Config& c) {
@@ -55,7 +54,7 @@ int mpp_video_level(const Config& c) {
   }
   const uint64_t macroblocks=uint64_t((c.width+15)/16)*((c.height+15)/16);
   const uint64_t mbps_x100=macroblocks*c.fps_x100;
-  return mbps_x100>98304000ULL?52:mbps_x100>52224000ULL?51:42;
+  return mbps_x100>98304000ULL?52:(macroblocks>8704||mbps_x100>52224000ULL)?51:42;
 }
 uint64_t now_us() {
   return uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());

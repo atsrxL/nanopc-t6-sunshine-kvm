@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import asyncio
+import base64
 import json
 import os
 import stat
+import struct
 from urllib.parse import urlencode
 from .keys import KEYS, BUTTONS
 
@@ -132,6 +134,10 @@ class Kvmd:
         await self.request("POST", "/hid/events/send_mouse_move", to_x=x, to_y=y)
     async def wheel(self, x, y):
         await self.request("POST", "/hid/events/send_mouse_wheel", delta_x=x, delta_y=y)
+    async def open_stream(self):
+        stream = KvmdStream(self.socket_path, self.headers)
+        await stream.open()
+        return stream
     async def neutralize(self):
         """Explicit exclusive-ownership recovery after daemon SIGKILL/restart. Does not reset the gadget."""
         failed = False
@@ -147,3 +153,154 @@ class Kvmd:
                 failed = True
         if failed:
             raise BackendError("neutralization incomplete; exclusive input must remain blocked")
+
+class KvmdStream:
+    """One persistent kvmd /ws connection for low-latency input events.
+
+    kvmd handles websocket messages strictly in order and without per-event replies, so
+    events are written without waiting. flush() sends kvmd's binary ping and waits for the
+    pong, proving every earlier event was dispatched before release/lease teardown.
+    Event contents are never logged.
+    """
+    MAX_FRAME = 1 << 20
+    # kvmd's OTG mouse process writes about one USB report per 4-4.5ms on T6.
+    # Anything sent faster piles up in kvmd's unmerged queue and replays late. Pacing mouse
+    # reports here keeps the backlog in rkmoon_hid's Queue, where adjacent motion is merged.
+    # 10s continuous-drag test on T6: 6ms tail after the last input, no backlog.
+    MOUSE_REPORT_INTERVAL = 0.0042
+
+    def __init__(self, socket_path, headers=None, timeout=0.5):
+        self.socket_path = socket_path
+        self.headers = headers or {}
+        self.timeout = timeout
+        self.reader = self.writer = None
+        self.task = None
+        self.pongs = asyncio.Queue()
+        self.alive = False
+        self.mouse_free_at = 0.0
+        self.keyboard_free_at = 0.0
+
+    async def _slot(self, attr, reports):
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        free_at = getattr(self, attr)
+        if free_at > now:
+            await asyncio.sleep(free_at - now)
+            now = loop.time()
+        setattr(self, attr, max(now, free_at) + reports * self.MOUSE_REPORT_INTERVAL)
+
+    async def _mouse_slot(self, reports):
+        await self._slot("mouse_free_at", reports)
+
+    async def open(self):
+        async def handshake():
+            self.reader, self.writer = await asyncio.open_unix_connection(self.socket_path, limit=65536)
+            key = base64.b64encode(os.urandom(16)).decode("ascii")
+            headers = {"Host": "localhost", "Upgrade": "websocket", "Connection": "Upgrade",
+                       "Sec-WebSocket-Key": key, "Sec-WebSocket-Version": "13", **self.headers}
+            raw = "GET /ws?stream=0 HTTP/1.1\r\n" + "".join(f"{k}: {v}\r\n" for k, v in headers.items()) + "\r\n"
+            self.writer.write(raw.encode("ascii"))
+            await self.writer.drain()
+            head = await self.reader.readuntil(b"\r\n\r\n")
+            status = head.split(b"\r\n", 1)[0].split()
+            if len(status) < 2 or status[1] != b"101":
+                raise BackendError("kvmd websocket upgrade rejected")
+        try:
+            await asyncio.wait_for(handshake(), 1.5)
+        except BackendError:
+            await self.close(); raise
+        except Exception:
+            await self.close(); raise BackendError("kvmd websocket unavailable") from None
+        self.alive = True
+        self.task = asyncio.create_task(self._read_loop())
+        await self.flush()
+
+    def _frame(self, opcode, payload):
+        header = bytearray([0x80 | opcode])
+        n = len(payload)
+        if n < 126: header.append(0x80 | n)
+        elif n < 65536: header.append(0x80 | 126); header += struct.pack(">H", n)
+        else: header.append(0x80 | 127); header += struct.pack(">Q", n)
+        mask = os.urandom(4)
+        return bytes(header) + mask + bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
+
+    async def _read_loop(self):
+        try:
+            while True:
+                b0, b1 = await self.reader.readexactly(2)
+                opcode = b0 & 0x0F
+                n = b1 & 0x7F
+                if n == 126: n = struct.unpack(">H", await self.reader.readexactly(2))[0]
+                elif n == 127: n = struct.unpack(">Q", await self.reader.readexactly(8))[0]
+                if n > self.MAX_FRAME: raise BackendError("kvmd websocket frame too large")
+                mask = await self.reader.readexactly(4) if b1 & 0x80 else None
+                payload = await self.reader.readexactly(n)
+                if mask: payload = bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
+                if opcode == 0x9:
+                    self.writer.write(self._frame(0xA, payload))
+                elif opcode == 0x8:
+                    break
+                elif opcode == 0x2 and payload[:1] == b"\xff":
+                    self.pongs.put_nowait(None)
+                # Text state broadcasts and other frames are ignored.
+        except (asyncio.CancelledError, asyncio.IncompleteReadError, ConnectionError, OSError, BackendError):
+            pass
+        finally:
+            self.alive = False
+            self.pongs.put_nowait(False)
+
+    async def _send(self, payload):
+        if not self.alive or self.writer is None:
+            raise BackendError("kvmd websocket closed")
+        try:
+            self.writer.write(self._frame(0x2, payload))
+            await asyncio.wait_for(self.writer.drain(), self.timeout)
+        except Exception:
+            self.alive = False
+            raise BackendError("kvmd websocket send failed") from None
+
+    async def flush(self):
+        while not self.pongs.empty(): self.pongs.get_nowait()
+        await self._send(b"\x00")
+        try:
+            ok = await asyncio.wait_for(self.pongs.get(), self.timeout)
+        except asyncio.TimeoutError:
+            ok = False
+        if ok is False:
+            self.alive = False
+            raise BackendError("kvmd websocket flush not confirmed")
+
+    async def key(self, key, down):
+        # The keyboard is its own USB endpoint with the same ~4ms report budget. A press and
+        # release closer than that lost ~5-45% of taps on T6, so key reports are paced too.
+        await self._slot("keyboard_free_at", 1)
+        await self._send(bytes([1, 1 if down else 0]) + key.encode("ascii"))
+    async def button(self, button, down):
+        await self._mouse_slot(1)
+        await self._send(bytes([2, 1 if down else 0]) + button.encode("ascii"))
+    async def absolute(self, x, y):
+        await self._mouse_slot(1)
+        await self._send(b"\x03" + struct.pack(">hh", x, y))
+    async def move_many(self, deltas):
+        await self._mouse_slot(len(deltas))
+        await self._send(b"\x04\x01" + b"".join(struct.pack(">bb", x, y) for x, y in deltas))
+    async def move(self, x, y):
+        await self.move_many([(x, y)])
+    async def wheel(self, x, y):
+        await self._mouse_slot(1)
+        await self._send(b"\x05\x00" + struct.pack(">bb", x, y))
+
+    async def close(self):
+        self.alive = False
+        if self.task:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            self.task = None
+        if self.writer:
+            try:
+                self.writer.write(self._frame(0x8, b"\x03\xe8"))
+                self.writer.close()
+                await asyncio.wait_for(self.writer.wait_closed(), 0.3)
+            except Exception:
+                pass
+            self.writer = None

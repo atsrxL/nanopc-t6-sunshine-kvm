@@ -122,3 +122,22 @@ is allowed but must not leave a final ZIP artifact in Target. Preserve the previ
 stable folder until new staged contents are completely verified. Parent coordinates
 old RKMoon client ZIP/sidecar/version cleanup after successful delivery; child must
 not independently delete other versions or user files.
+
+
+## Flexible source modes and lifecycle diagnostics
+
+Client follows any even source dimensions up to 3840x2160 and fpsX100100..12010 (120Hz clock tolerance),
+without an EDID/preset whitelist or local-monitor refresh cap. Server owns the
+pixel-rate budget and capture compatibility. Integer upstream request FPS rounds
+source fpsX100 (7550 ->76); server must map this back to its actual input timing.
+Settings remain bitrate/codec; main-window input mode is unchanged.
+Lifecycle diagnostic log uses QStandardPaths AppLocalDataLocation/client-lifecycle.log
+(Windows normally %LOCALAPPDATA%/RKMoon/RKMoon HDMI KVM/client-lifecycle.log), with
+512KiB rotation to .previous. Only explicit event labels/numeric stages, exit codes,
+mode dimensions/rates and state flags are written. No general upstream log capture,
+URLs, authorization, passwords, input contents, or session keys.
+Two transient transport poll failures are tolerated during active playback; third
+failure stops, while authentication/identity/protocol rejection stops immediately.
+Error text is retained across successful metadata polls. This improves diagnosis and
+transient behavior; it is NOT a confirmed fix for the previously reported disconnect.
+Windows delivery/tests for this revision pending until the following evidence entry.

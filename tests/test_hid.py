@@ -318,3 +318,61 @@ class SelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls,[])
 
 if __name__=='__main__': unittest.main()
+
+class StreamTests(unittest.IsolatedAsyncioTestCase):
+    """Fake kvmd websocket over a real Unix socket: ordered binary events, ping/pong flush."""
+    async def asyncSetUp(self):
+        import struct
+        self.tmp=tempfile.TemporaryDirectory();self.path=os.path.join(self.tmp.name,'k.sock')
+        self.frames=[];self.reject=False
+        async def handler(r,w):
+            head=await r.readuntil(b'\r\n\r\n');self.head=head
+            if self.reject:
+                w.write(b'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n');await w.drain();w.close();return
+            w.write(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
+            w.write(bytes([0x81,4])+b'{"a"}'[:4]);await w.drain()
+            try:
+                while True:
+                    b0,b1=await r.readexactly(2);n=b1&0x7f
+                    if n==126:n=struct.unpack('>H',await r.readexactly(2))[0]
+                    mask=await r.readexactly(4);p=bytes(b^mask[i&3] for i,b in enumerate(await r.readexactly(n)))
+                    if b0&0x0f==8:break
+                    self.frames.append(p)
+                    if p==b'\x00':w.write(bytes([0x82,1,0xff]));await w.drain()
+            except asyncio.IncompleteReadError:pass
+            w.close()
+        self.server=await asyncio.start_unix_server(handler,self.path)
+        self.k=Kvmd(self.path,{'X-KVMD-User':'u'})
+    async def asyncTearDown(self): self.server.close();await self.server.wait_closed();self.tmp.cleanup()
+    async def test_ordered_events_and_flush(self):
+        s=await self.k.open_stream()
+        self.assertIn(b'GET /ws?stream=0',self.head);self.assertIn(b'X-KVMD-User: u',self.head)
+        await s.key('KeyA',True);await s.move_many([(127,0),(10,-5)]);await s.absolute(-32768,32767)
+        await s.button('left',False);await s.wheel(0,-1);await s.flush();await s.close()
+        self.assertEqual(self.frames,[b'\x00',b'\x01\x01KeyA',b'\x04\x01\x7f\x00\x0a\xfb',
+            b'\x03\x80\x00\x7f\xff',b'\x02\x00left',b'\x05\x00\x00\xff',b'\x00'])
+    async def test_rejected_upgrade(self):
+        self.reject=True
+        with self.assertRaises(BackendError):await self.k.open_stream()
+    async def test_closed_stream_raises(self):
+        s=await self.k.open_stream();await s.close()
+        with self.assertRaises(BackendError):await s.key('KeyA',True)
+    async def test_lease_streams_motion_but_http_releases(self):
+        s=await self.k.open_stream();http=Fake()
+        lease=Lease(http,'relative',s)
+        await lease.apply({'op':'button','button':1,'down':True})
+        await lease.apply({'op':'move','x':300,'y':0})
+        self.assertEqual(await lease.release(),True)
+        await s.flush();await s.close()
+        self.assertEqual(self.frames[1:3],[b'\x02\x01left',b'\x04\x01\x7f\x00\x7f\x00\x2e\x00'])
+        self.assertEqual(http.events,[('button','left',False)])
+    async def test_mouse_reports_are_paced_to_usb_rate(self):
+        s=await self.k.open_stream();loop=asyncio.get_running_loop()
+        t=loop.time()
+        for i in range(20):await s.absolute(i,0)
+        elapsed=loop.time()-t
+        t=loop.time()
+        for i in range(10):await s.key('KeyA',i%2==0)
+        self.assertGreaterEqual(loop.time()-t,9*s.MOUSE_REPORT_INTERVAL*0.9)
+        await s.flush();await s.close()
+        self.assertGreaterEqual(elapsed,19*s.MOUSE_REPORT_INTERVAL*0.9)

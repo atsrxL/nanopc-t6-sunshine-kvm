@@ -11,5 +11,8 @@ public:
   Message encode(const Capture::Frame&, Capture::Buffer* buffer, bool idr);
   void bitrate(uint32_t bps);
   bool direct() const;
+  // Frame sequence counter; lets a reopened encoder continue the AU sequence after capture recovery.
+  uint64_t sequence() const;
+  void continue_sequence(uint64_t last);
 };
 } // namespace rkmoon
