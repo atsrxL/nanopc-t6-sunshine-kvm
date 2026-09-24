@@ -62,3 +62,15 @@ T6 上的服务端以一个自包含的发布目录运行，由 systemd 开机�
 - 安装后 rkmoon、rkmoon-edid、rkmoon-hdmirx-audio、rkmoon-input 均为 active 且 enabled；rkmoon-edid 报告 EDID 已一致，未重写；MPP 硬件编码探测成功；47989 用 kvm 密码返回原来的 uniqueid，错误密码返回 401。
 - 尚未做 T6 整机重启验证。
 
+
+## 重装 Armbian 后恢复
+
+git 仓库只有源码，不含编译好的二进制和私有运行库（build/ 不提交）。重装后按下面顺序恢复：
+
+1. 刷 Armbian 26.5.1 vendor 内核 6.1.115-vendor-rk35xx 镜像。声卡模块只接受这个内核版本，内核不同时 rkmoon-hdmirx-audio 会拒绝加载，需要按 kernel/hdmirx-codec/README.md 对新内核重新编译模块，并更新 hdmirx_audio_bind.py 里的版本和 SHA。
+2. 在 /boot/armbianEnv.txt 的 extraargs 保留 cma=256M，然后重启。
+3. 安装系统包：acl，以及 docs/INDEPENDENT-INSTALL.md 第 2 步列出的 python3 包。
+4. 安装键鼠后端：python3 tools/fetch_sources.py 拉取固定版本的 kvmd，然后 sudo python3 tools/install_input.py --source "$PWD/vendor/kvmd" --user at --udc fc000000.usb，再 sudo systemctl enable --now rkmoon-input。
+5. 安装服务端：sudo python3 tools/install_server.py --release rkmoon-server-20260924-r9.tar.gz --user at --start。发布包需要事先备份，或按 docs/BUILD.md 重新编译后用 package_server.py 生成。
+6. 服务器身份（uniqueid）会重新生成。如需保留，恢复前备份 /var/lib/rkmoon/xdg/sunshine/sunshine_state.json，之后用 --migrate-state 导入；否则在客户端删除这台主机，再重新添加。
+
