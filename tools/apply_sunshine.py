@@ -333,7 +333,7 @@ def main():
         stage=Path(tempfile.mkdtemp(prefix="rkmoon-overlay-",dir=repo.parent))
         try:
             payload=stage/"payload";payload.mkdir()
-            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_admin.cpp","rkmoon_admin_io.hpp","rkmoon_audio_pcm.hpp","rkmoon_password.hpp","rkmoon_display.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
+            for name in ("rkmoon_bridge.hpp","rkmoon_bridge.cpp","rkmoon_audio.cpp","rkmoon_main.cpp","rkmoon_audio_pcm.hpp","rkmoon_password.hpp","rkmoon_display.hpp"):shutil.copy2(ROOT/"sunshine"/name,payload/name)
             for name in ("core.cpp","annexb.cpp","hid_client.cpp"):shutil.copy2(ROOT/"src"/name,payload/name)
             shutil.copy2(ROOT/"config/hdmi-apps.json",payload/"hdmi-apps.json")
             shutil.copytree(ROOT/"include",payload/"include")
