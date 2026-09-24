@@ -1,5 +1,41 @@
 # RKMoon 接手说明 — 2026-09-23
 
+> 2026-09-24 最新状态：用户确认当前客户端在线且可用，保留现场会话。此前偶发断开/View HDMI失败仍未定位；T6持续约90fps并收到客户端心跳，RTSP重试出现tag校验失败。源码包含尚未构建交付的生命周期诊断与短暂metadata失败容错草稿，不代表故障已修复。用户要求上传全部最新源码；Target现用0fb281698fd2目录不随此次源码提交替换。
+
+> 最新客户端0fb281698fd2已去掉嵌套common Connection.c的连接相对微移（前版导致绝对租约退出），全新Windows构建、Qt22/22。鼠标模式已移到主GUI。Target仅保留可运行目录RKMoon-Windows-x64，40文件读回校验，旧客户端ZIP/sidecar已清理，真实串流待用户复测。
+
+> 最新交付要求：Windows客户端须以可直接运行的未打包目录交付Target，稳定路径RKMoon-Windows-x64；新目录校验完成后移除旧RKMoon客户端版本及ZIP/sidecar。其他项目和驱动保留。当前正在修复客户端底层连接微移导致绝对租约退出，并把鼠标模式移到主窗口。
+
+> 双鼠标模式已交付：T6 `/home/at/rkmoon-mouse-modes/rkmoon-kvm` SHA b0fdc631，runtime allow_absolute_mouse=true，真实双USB鼠标，LAN发布relative,absolute。Windows mouse-modes-c6b7b7db715c（SHA e6fe614d）Qt22/22，默认绝对/可选相对触控板，C仅显示指针。非16:9映射离线通过、真实USB中心/象限坐标通过，客户端全链路待测。详见[鼠标模式记录](results/20260924-display/MOUSE-MODES.md)。
+
+> 首帧退出已定位并修复：旧auto-display-1b610d1包的SDL自定义停止事件与上游FRAME_READY撞号，应停用。新Windows auto-display-exitfix-b49e86cccbc3已交付Target，SHA e9b6e076，Qt18/18与冷启动事件回归通过，真实用户复测待确认。见[缺陷与修复记录](results/20260924-1440p90/DISPLAY-FOLLOW.md)。
+
+> 自动画面模式服务端已部署：`/home/at/rkmoon-display-follow/rkmoon-kvm`，SHA47cd6a1f，原身份/worker/input配置保留，两个服务active，LAN认证后发布2560×1440 fps_x1008999。Windows auto-display-1b610d1bf94a已交付Target，SHA475e71cd，Qt17/17及启动检查通过；异步跟随与本地指针代码已交付，真实现场切换/指针仍未验收。视频设置仅码率/编码。证据见 [本轮记录](results/20260924-1440p90/DISPLAY-FOLLOW.md)。
+
+> 当前源已按用户选择切到2560×1440 90Hz：Windows NVAPI自定义保存成功，客体90Hz，T6实测89.9935Hz；保留当前90Hz EDID，未设置开机EDID恢复。input.enabled=true，USB枚举OK，两个服务active。不要再称当前源1080p；见[客户端复查](results/20260924-1440p90/CLIENT-FOLLOWUP.md)。
+
+> 客户端后续：用户确认1080p可见，2K日志明确source/client尺寸不匹配，实际源仍1080p60。Znas USB直通已验证，Windows识别RKMOON001键鼠OK；T6后端残留offline，经只重启rkmoon-input恢复online，runtime input.enabled已恢复true，专用服务重启。见[复查](results/20260924-1440p90/CLIENT-FOLLOWUP.md)。以下input禁用描述为历史。
+
+> 当前T6已切HTTP密码实验server：/home/at/rkmoon-http-1440p90，rkmoon-http-live active（临时unit、at用户），LAN正确密码serverinfo/applist200、password-http-v1、HttpsPort0、错误密码401。旧912613c服务停止但目录保留。USB键鼠硬件报告offline，故新runtime input.enabled=false；视频源仍1080p60。见[部署记录](results/20260924-http-password/T6-DEPLOY.md)。以下未部署描述为历史。
+
+> 后续实机编码通过：用户纠正后重读sshh，T6登录恢复；HEVC/H2641440p90各60s编码和独立完整解码通过（5394帧，各89.998/89.982fps，DMA-BUF，0/1raw skip，P95 7.025/6.672ms）。原EDID/1080p60已恢复，测试worker释放，原服务保持。见 [最新编码证据](results/20260924-1440p90/ENCODE.md)。以下“SSH阻碍/未编码”为历史，不再是T6当前状态；Windows子代理正按更新sshh重读正确凭据续建，端到端90fps尚未测。
+
+> 实验90Hz服务端构建完成：worker/server ARM64完整链接，30原生通过、91/93 Python联合通过（2条件跳过）、配置gate15项通过。源码默认仍60Hz；开启allow_high_resolution与allow_1440p90_experiment后才允许2560×1440约90Hz，worker显式CLI开关，GOP90、HEVC5.1/H2645.2。产物/hash见 [构建记录](results/20260924-1440p90/SERVER-BUILD.md)，尚未部署server或完成90fps实机编码。
+
+> 1440p90采集阶段更新：真实V4L2完整帧30s通过（2695帧，timestamp89.9981fps，零序号缺失/错误，每帧11059200字节），见 [采集记录](results/20260924-1440p90/CAPTURE.md)。实验worker9158a60已上传独立目录并验证hash/依赖；下一次SSH认证失败，编码未执行。原EDID和1080p60已恢复、NV临时任务已清理。client实验预设Mac Qt12/12通过，Windows构建因MS-A2 SSH认证失败未执行；不要把旧Windows包当作新包。
+
+> NVIDIA后续已解决：NVAPI自定义1440p90两次成功，T6两次实测2560×1440、89.9935Hz；成功EDID与时序见 [NVIDIA记录](results/20260924-1440p90/NVIDIA.md)。下条失败记录为历史。试用均自动恢复，未保存Windows自定义模式，原EDID已恢复。下一步是真实采集/MPP吞吐与server/client90Hz实现，尚未完成。
+
+> 1440p90最新实测：当前源为Znas Tiny11_clone直通RTX5060Ti，不再是NUC9。临时EDID加入90Hz并调整TMDS上限后，Windows仍拒绝模式（CDS_TEST=-2）；原EDID已读回确认恢复，T6恢复1080p59.9952、两个rkmoon服务active。未放宽90Hz代码、未执行90Hz采集/编码。见 [试验及回滚](results/20260924-1440p90/STATUS.md)。
+
+> 当前HTTP版服务端：ARM64 Linux完整链接、实际HTTP密码认证/无HTTPS监听/无PEM生成/重启身份回归通过；详见 results/20260924-http-password/STATUS.md。Windows客户端由Cpad/gpt-6-sol medium子代理接续构建交付，原Claude代理额度已耗尽。未访问T6。
+
+> 最新要求：HTTP＋密码，取消HTTPS/证书验证；默认密码 `kvm`，Windows为主要客户端。此条取代下文旧TLS/TOFU要求，见 [ADR-005](docs/ADR-005-http-password.md)。
+
+> 密码认证 P0：2026-09-24 ARM64 Linux完整链接、非root真实HTTPS认证/旧pair关闭/重启身份稳定测试通过（模拟probe，无媒体流）。28原生及91/93工具测试通过、2缺内核fixture跳过。见 [新记录](results/20260924-password/STATUS.md)。T6部署和真实新客户端流未测试。
+
+> 2026-09-24：按用户要求改为 IP＋密码（初版 `kvm`），取消 PIN/pair 和客户端证书登记授权。TLS/输入加密保留；旧配对说明及旧实机通过记录不代表新认证验收。见 [认证决策](docs/ADR-004-password-auth.md)。新版本尚未部署到设备。
+
 > HDMI音频专项 `fix/hdmirx-audio-codec`：固定95e85f6确认TX禁capture回归误伤RX，精确26.5.1 headers/config/symvers构建RX-only独立模块已交付（[源码与证据](kernel/hdmirx-codec/README.md)）。父会话已验证SHA、加载并仅重绑codec.5，card0 capture PCM恢复；真实48k stereo S16录音仍报Input/output error，**声音未通过**。本子会话仅编译/源码分析，硬件与回滚由父会话掌控。
 
 > 最小服务分支 `feat/minimal-kvm-server` 在独立目录开发，**不代表下述旧 main 验收已迁移**。已改为专用 `rkmoon-kvm` 无 WebUI/npm 主入口，保留 Sunshine GameStream 配对/RTSP/RTP/FEC/认证加密输入、固定 HDMI 应用；本地 0700/0600 Unix PIN CLI；显式 ALSA HDMI stereo 48k→Opus，缺源实时静音，断开重试。冻结912613c已完成ARM64 QEMU完整链接、25原生+87工具/联合、无Web模拟启动；runtime及精确hash见 `results/20260923-minimal/STATUS.md`，已交父会话，不包含后续3da8050启动文案。生产音频object的null/xrun合成测试通过；真实硬件/客户端音画仍未测，T6 HDMI card无PCM节点由父会话调查。构建 VM301 是 x86_64 客体跑 arm64 QEMU 容器，不是 T6 原生测试。详见 `docs/ADR-002-minimal-service.md`；不要在旧 VNC 项目部署/覆盖。

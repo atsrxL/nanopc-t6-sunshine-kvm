@@ -1,5 +1,5 @@
 [Unit]
-Description=RKMoon owned USB keyboard and relative mouse
+Description=RKMoon owned USB keyboard and dual-mode mouse
 After=systemd-modules-load.service
 Before=rkmoon-input.service
 [Service]

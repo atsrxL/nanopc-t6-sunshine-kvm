@@ -5,6 +5,9 @@ No video/audio/USB source is opened; no actual pairing or stream is accepted.
 Run in a task-owned network namespace/container, unprivileged except --root-refusal.
 """
 import argparse
+import base64
+import http.client
+import xml.etree.ElementTree as ET
 import os
 from pathlib import Path
 import shutil
@@ -74,22 +77,60 @@ socket.socket(fileno=3).sendall(b)
                         for line in Path('/proc/net/'+table).read_text().splitlines()[1:]:
                             fields=line.split()
                             if fields[3]=='0A' and fields[9] in inodes:ports.add(int(fields[1].split(':')[1],16))
-                    if {47984,47989,48010}<=ports and (state/'admin.sock').exists():break
+                    if {47989,48010}<=ports:break
                     time.sleep(.1)
                 assert process.poll() is None, 'synthetic host failed; see private startup log'
-                assert ports=={47984,47989,48010}, f'unexpected startup listener set: {sorted(ports)}'
-                with socket.socket(socket.AF_UNIX) as client:
-                    client.settimeout(3);client.connect(str(state/'admin.sock'))
-                    for fragment in (b'L',b'IS',b'T',b'\n'):client.sendall(fragment);time.sleep(.005)
-                    data=b''
-                    while not data.endswith(b'.\n'):data+=client.recv(100)
-                    assert data==b'.\n'
+                assert ports=={47989,48010}, f'unexpected startup listener set: {sorted(ports)}'
+                assert not (state/'admin.sock').exists()
+                def request(path, credential=None):
+                    connection = http.client.HTTPConnection("127.0.0.1", 47989, timeout=3)
+                    try:
+                        headers = {} if credential is None else {"Authorization": "Basic "+base64.b64encode(credential.encode()).decode()}
+                        connection.request("GET", path, headers=headers)
+                        response = connection.getresponse()
+                        return response.status, response.read()
+                    finally:
+                        connection.close()
+                status, body = request("/pair")
+                assert status == 404 or ET.fromstring(body).attrib.get("status_code") == "404"
+                with socket.socket() as client:
+                    client.settimeout(.2)
+                    assert client.connect_ex(("127.0.0.1", 47984)) != 0
+                for path in ("serverinfo", "applist", "appasset", "launch", "resume", "cancel"):
+                    status, body = request("/"+path)
+                    assert ET.fromstring(body).attrib["status_code"] == "401"
+                status, body = request("/serverinfo", "kvm:wrong")
+                assert ET.fromstring(body).attrib["status_code"] == "401"
+                status, body = request("/serverinfo", "kvm:kvm")
+                tree = ET.fromstring(body)
+                assert tree.attrib["status_code"] == "200" and tree.findtext("PairStatus") == "1"
+                host_uuid = tree.findtext("uniqueid")
+                assert tree.findtext("RKMoonAuth") == "password-http-v1" and tree.findtext("HttpsPort") == "0"
+                assert not list(state.rglob("*.pem")), "HTTP-only startup generated TLS files"
+                status, body = request("/applist", "kvm:kvm")
+                assert ET.fromstring(body).attrib["status_code"] == "200"
+                print("password_http_auth=pass synthetic_no_stream")
                 assert (xdg/'sunshine/apps.json').exists()
                 assert (xdg/'sunshine/sunshine.log').exists()
                 print('different_cwd_and_private_state=pass')
                 print('synthetic_probe_startup_tcp_listeners='+','.join(map(str,sorted(ports))))
                 print('web_port_47990_absent=pass startup_only_no_stream')
-                print('fragmented_admin_list=pass real_socket_same_uid')
+                print('legacy_pair_and_admin_disabled=pass')
+                process.terminate()
+                process.wait(timeout=5)
+                process=subprocess.Popen([str(binary),str(config)],cwd="/tmp",env=env,stdout=logfile,stderr=subprocess.STDOUT)
+                deadline=time.monotonic()+30
+                while True:
+                    assert process.poll() is None, "restart failed; see private log"
+                    try:
+                        status, body = request("/serverinfo", "kvm:kvm")
+                        break
+                    except (OSError, http.client.HTTPException):
+                        if time.monotonic() >= deadline: raise
+                        time.sleep(.1)
+                tree = ET.fromstring(body)
+                assert tree.attrib["status_code"] == "200" and tree.findtext("uniqueid") == host_uuid
+                print("password_host_identity_survives_restart=pass")
             finally:
                 if process.poll() is None:
                     start=time.monotonic();process.terminate()

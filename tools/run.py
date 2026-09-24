@@ -21,7 +21,12 @@ class Refused(RuntimeError):pass
 def load(path):
     c=json.loads(path.read_text())
     expected={'schema','sunshine_binary','worker_binary','state_directory','capture_device','capture_ownership_authorized','allow_cpu_pixel_copy','allow_high_resolution','input'}
-    if set(c) not in (expected,expected|{'audio'}) or c['schema']!=1:raise Refused('unknown/missing configuration fields')
+    optional={'audio','allow_1440p90_experiment','allow_absolute_mouse'}
+    if not expected <= set(c) or set(c)-expected-optional or c['schema']!=1:raise Refused('unknown/missing configuration fields')
+    if type(c.get('allow_1440p90_experiment',False)) is not bool:raise Refused('experimental 90 Hz permission must be true/false')
+    c.setdefault('allow_1440p90_experiment',False)
+    if type(c.get('allow_absolute_mouse',False)) is not bool:raise Refused('absolute mouse permission must be true/false')
+    c.setdefault('allow_absolute_mouse',False)
     audio=c.get('audio',{'enabled':False,'alsa_device':''})
     if not isinstance(audio,dict) or set(audio)!={'enabled','alsa_device'} or type(audio['enabled']) is not bool or not isinstance(audio['alsa_device'],str):raise Refused('invalid HDMI audio configuration')
     if audio['enabled'] and (not audio['alsa_device'].startswith(('hw:','plughw:')) or len(audio['alsa_device'])>128 or any(ch in audio['alsa_device'] for ch in '\r\n\x00')):raise Refused('explicit hw:/plughw: HDMI capture device required (never default microphone)')
@@ -94,12 +99,14 @@ def base_env(c,state):
     e=os.environ.copy();e['PYTHONPATH']=str(ROOT/'python');e['HOME']=str(state);e['XDG_CONFIG_HOME']=str(state/'xdg')
     # The Linux privileged environment sanitizer remains upstream; runtime must not require root/capabilities.
     e.update(RKMOON_WORKER=c['worker_binary'],RKMOON_VIDEO_DEVICE=c['capture_device'],RKMOON_CAPTURE_AUTHORIZED='1',
-        RKMOON_ALLOW_COPY=str(int(c['allow_cpu_pixel_copy'])),RKMOON_ALLOW_HIGH_RES=str(int(c['allow_high_resolution'])))
+        RKMOON_ALLOW_COPY=str(int(c['allow_cpu_pixel_copy'])),RKMOON_ALLOW_HIGH_RES=str(int(c['allow_high_resolution'])),
+        RKMOON_ALLOW_1440P90_EXPERIMENT=str(int(c.get('allow_1440p90_experiment',False))),
+        RKMOON_ALLOW_ABSOLUTE_MOUSE=str(int(c.get('allow_absolute_mouse',False) and c['input']['enabled'])))
     e.pop('CONFIGURATION_DIRECTORY',None)
     e.pop('SUNSHINE_MIGRATE_CONFIG',None)
     e.pop('RKMOON_HID_SOCKET',None)
     e.pop('RKMOON_AUDIO_DEVICE',None)
-    e['RKMOON_ADMIN_SOCKET']=str(state/'admin.sock')
+    e.pop('RKMOON_ADMIN_SOCKET',None)
     if c['audio']['enabled']:e['RKMOON_AUDIO_DEVICE']=c['audio']['alsa_device']
     if c['input']['enabled']:e['RKMOON_HID_SOCKET']=str(state/'hid.sock')
     return e
@@ -107,7 +114,7 @@ def base_env(c,state):
 def check_ports():
     # Only GameStream HTTP/HTTPS + RTSP; port 47990 Web UI is not started.
     # No firewall/UPnP changes. Additional upstream listeners may still fail at startup.
-    for kind,ports in [(socket.SOCK_STREAM,[47984,47989,48010]),(socket.SOCK_DGRAM,[47998,47999,48000])]:
+    for kind,ports in [(socket.SOCK_STREAM,[47989,48010]),(socket.SOCK_DGRAM,[47998,47999,48000])]:
         for port in ports:
             with socket.socket(socket.AF_INET,kind) as s:
                 if kind==socket.SOCK_STREAM:
@@ -131,7 +138,7 @@ def start(c,state):
     if not c['capture_ownership_authorized']:raise Refused('capture ownership has not been granted; no child/device opened')
     executable(c['sunshine_binary'],MARKER);executable(c['worker_binary'])
     if c['input']['enabled'] and not c['input']['exclusive_hid_authorized']:raise Refused('HID exclusivity not granted')
-    envroot=prepare(c,state);check_ports();stale_socket(state/'admin.sock');env=base_env(c,state)
+    envroot=prepare(c,state);check_ports();env=base_env(c,state)
     children=[];logs=[];stopping=False;failed=False;hid_started=False
     def spawn(args,logname):
         log=(state/logname).open('ab',buffering=0);logs.append(log)
@@ -152,7 +159,7 @@ def start(c,state):
                 if hid.poll() is not None or stopping or time.monotonic()>deadline:raise Refused('HID bridge did not become ready; inspect sanitized local log')
                 time.sleep(.05)
         sunshine=spawn([c['sunshine_binary'],str(state/'sunshine.conf')],'sunshine.log')
-        print('RKMoon minimal host started; no Web UI. Approve pairing via tools/admin.py in this private state. Ctrl+C stops this instance.',flush=True)
+        print('RKMoon minimal host started; no Web UI. Connect with the password-enabled client. Ctrl+C stops this instance.',flush=True)
         while not stopping:
             if any(p.poll() is not None for p in children):failed=True;break
             time.sleep(.1)

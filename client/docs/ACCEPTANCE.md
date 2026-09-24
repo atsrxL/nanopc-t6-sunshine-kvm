@@ -1,3 +1,117 @@
+# Client acceptance — 2026-09-24 (password over plaintext HTTP)
+
+## 1440p90 client follow-up
+
+Explicit 2560×1440/90 experimental selection is implemented in the settings UI;
+1920×1080/60 remains the default. Mac arm64 Qt 6.11.2 offline tests now pass
+12/12, including UI preset selection, persistence, and exact StreamingPreferences
+dimensions/fps. Python source checks pass. This is not Windows or hardware validation.
+Native Windows compile/package and offline Qt tests now PASS for this follow-up;
+real client stream/decoder performance remains **NOT TESTED**. The saved MS-A2 password works when its Markdown backticks are
+excluded; the earlier authentication failure was an automation error, not a device
+credential change. VM9006 was assembled from VM200 `env-completed` snapshots and
+passed QGA health, but VM200 unexpectedly became `running` before build setup.
+The phase stopped; VM9006 was gracefully stopped with a deletion hold. After VM200
+returned to stopped and the recorded lineage/control guard passed, the same-project
+VM9006 resumed. Windows 11 IoT LTSC x64, Qt 6.8.3, VS2022 Release linked successfully;
+offline Qt suite 12/12 passed including both new 1440p90 tests. Input snapshot commit
+inside the clone: `bac1b3e776b1e1bc9abea6e6c4457ec0ac67ea88`; the shared tree was
+not committed. App: 589,312 bytes, SHA256
+`f291a14e401b024ebd07950c81161f4d0a76ed0d0a7ec33cae3bcc40706e633b`.
+Internal evaluation ZIP: `smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64-1440p90-experimental-bac1b3e776b1.zip`,
+29,320,363 bytes, SHA256 `06381939e037dc79b13060f706959ee243b5e639e43d809ec26f3977fe9ef07e`.
+Target probe, temporary-name transfer, final full size/hash readback and SHA256 sidecar
+passed. VM9006 and VM200 stopped; 9006 guard check passed, same-project retention
+until 2026-09-25 10:08:38 CST. The parent reports a real 30-second T6 V4L2 capture at 2560×1440:
+2695 frames, timestamp rate 89.9981 fps, 11,059,200 bytes per frame, and zero
+sequence gaps or errors. This is a capture-stage result, separate from the earlier
+NVIDIA output and T6 timing lock. Real 60-second HEVC and H.264 MPP DMA-BUF import,
+encoding, and independent decoding each passed at 5394 frames; dequeue rate was
+89.99825/89.98159 fps, raw skips 0/1, and dequeue-to-AU P95 was 7.025/6.672 ms
+respectively (see `results/20260924-1440p90/ENCODE.md`). RTP delivery and client
+decoding/presentation at 90 fps remain **NOT TESTED**. The planned server-side opt-in is
+`RKMOON_ALLOW_1440P90_EXPERIMENT`; the client does not enable that server setting.
+
+`pair`/PIN, TLS, trust-on-first-use and certificate pinning were all removed; the client
+now binds an address, a port and a password and speaks to one plaintext HTTP base port
+per docs/ADR-005-http-password.md. **The password and all control traffic are readable
+and modifiable on the wire by design.** The 2026-09-23 record below is **superseded for
+anything touching authentication or transport**.
+
+| Gate | State | Evidence / boundary |
+|---|---|---|
+| Overlay pins + anchor fail-closed incl. auth and HTTP-base-port anchors | PASS | `python3 client/tools/test_client.py`, 3 groups |
+| No pairing, no identity key, no persisted password in client sources | PASS | same run, `test_client_never_pairs_or_persists_a_password` |
+| Mac arm64 Qt 6.11.2 application compile/link | PASS | local installed clang/qmake; not Windows, not hardware |
+| Offline QtTest suite (10/10) | PASS | offscreen; scoping, UTF-8 base64, redirect policy, no persisted password |
+| Loopback HTTP integration of credential and rejection paths | PASS | in-process 127.0.0.1 servers only; **not** the real server |
+| Windows x64 package with HTTP password auth | PASS | VM9005, Qt 6.8.3/MSVC2022 Release; exact source snapshot b4367616e16909642e77878abddea64b61798c69; details below |
+| Real host login, wrong password, failure budget | NOT TESTED | needs the parent-coordinated integration window |
+| Real HEVC/H.264 decode, audio, input | NOT TESTED | unchanged by this task |
+
+## Windows HTTP/password build delivered (2026-09-24)
+
+The current client tree was copied into a new Windows checkout and committed there as
+b4367616e16909642e77878abddea64b61798c69. The shared workspace was not committed
+or reset. Pinned Moonlight and five nested submodules were fetched fresh; the HTTP
+overlay applied to the fixed commit. Source pin/anchor tests: 3/3.
+
+| Check | State | Evidence / boundary |
+|---|---|---|
+| Native Windows x64 VS2022 Release link | PASS | VM9005, Qt 6.8.3; app 586,752 bytes, SHA256 941d845ab9985f162293ddaa1c6adb5c8b4a2a9226c240b6b6a55fd0591c9217 |
+| Windows QtTest | PASS | 10/10 including HTTP loopback, request scoping, redirect refusal and window reentry |
+| Audio gain assertions | PASS | Native MSVC debug CRT standalone test |
+| Packaged clean-PATH startup | PASS | Extracted ZIP; process alive after 4s offscreen, then stopped |
+| Target SMB write and readback | PASS | ZIP and SHA256 sidecar sizes and full hashes matched after final rename |
+| Real HDMI/HEVC/H264/audio/USB | NOT TESTED | Requires a separate integration window |
+
+Package: smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64-reviewed-b4367616e169.zip,
+29,319,559 bytes, SHA256 c187fad05223b47fc0735bc162672aa00c6ebfb455a7918cf6727db7c1fd960b.
+The matching .zip.sha256 sidecar is 112 bytes and was also read back. This is an
+internal evaluation package, not a public release.
+
+MS-A2 was online before and remains online; VM301 was untouched. VM200 stayed
+stopped with its env-completed snapshot. VM9005 is a task-owned manual ZFS linked
+clone of that exact snapshot; three overlay origins were verified. QGA health and
+SSH Ed25519 fingerprint verification passed. The exact temporary lease was closed;
+QGA then reported no lease, sshd stopped/manual and zero host private keys.
+Controller key material was deleted. VM9005 and VM200 are stopped. VM9005 guest
+build/log state is retained with reuse=forbidden. Its guarded destroy-only timer
+passed --check and targets 2026-09-25 02:31:26 CST after 24h inactivity.
+
+## What the loopback slot actually proved
+
+`loopbackAuthenticateAndReject` runs `KvmHost` against plain HTTP servers started inside
+the test process on 127.0.0.1. It needs no key material or configuration, so it always
+runs. Verified end to end:
+
+- An authorized `serverinfo` plus `applist` exchange resolves the host identity and the
+  fixed HDMI app, and every request carries the agreed `Authorization` header (value not
+  reproduced here).
+- `applist` — an upstream "HTTPS" call site — arrives on the single plaintext base port,
+  proving the overlay's base-URL redirect. `NvComputer` still substitutes upstream's
+  default for the `HttpsPort=0` the server reports, but that value is inert because the
+  patched `NvHTTP::setHttpsPort` ignores it.
+- A wrong password produces the server's HTTP 200 / root `status_code=401` answer, is
+  reported as a rejected password, and leaves no armed credential.
+- A host that authorizes but does not advertise `RKMoonAuth` is refused.
+
+Boundaries: loopback servers are synthetic XML responders, not the production Sunshine
+handlers. They do not exercise RTSP, RTP/FEC, the real failure budget, real timing, or
+Windows. A loopback pass is evidence about this client's logic only.
+
+## Removed attack surface
+
+- `nvpairingmanager` is not compiled: no GameStream PIN pairing crypto in the binary.
+- `identitymanager` is not compiled and the upstream client-certificate installation was
+  removed from `NvHTTP::openConnection`. The client no longer generates or stores an RSA
+  identity key or certificate; the offline test run confirms the previous
+  "Wrote new identity credentials to settings" step no longer happens.
+- Nothing certificate-related is persisted or checked; `KvmConfig` has no certificate or
+  HTTPS-port field.
+
+---
+
 # Client acceptance — 2026-09-23
 
 Do not substitute official Moonlight's RX9060XT HEVC1080p60/D3D11VA result for this
@@ -16,7 +130,7 @@ custom client. No T6/.180 desktop was accessed by this task.
 | Reviewed Windows synthetic log/modifier/relative-policy/reentry tests | PASS | QtTest 6/6 (4 functional + init/cleanup), signed16/float assertions |
 | Reviewed packaged Windows offscreen clean-PATH startup | PASS | 4 seconds, packaged DLLs + OS only; extra offscreen plugin in separate test directory |
 | Reviewed internal package / evidence SMB readback | PASS | newly named artifacts below; source/binary/file manifests retained |
-| Real pairing / wrong PIN / cert change / encrypted control | NOT TESTED | code reuses pinned upstream; requires host integration |
+| Real pairing / wrong PIN / cert change / encrypted control | SUPERSEDED | pairing removed 2026-09-24; see the password rows above |
 | Real HEVC/H.264 hardware decode / reconnect / full screen | NOT TESTED | do not claim from offscreen startup |
 | Opus RTP 5/10/20ms / A/V sync / mute-unmute / source loss-recovery | NOT TESTED | production renderer preserved; host silence/recovery not exercised |
 | Actual relative keyboard/mouse / release on disconnect | NOT TESTED | requires coordinated hardware window |
@@ -123,3 +237,100 @@ was originally online and stays online; no host or VM301 shutdown scheduled.
 **Remaining gate:** parent-coordinated actual host PIN approval, hardware HEVC/H.264,
 HDMI audio/AV sync/source recovery and USB input. This reviewed package is still
 internal evaluation, not a public release or an end-to-end pass.
+
+### Automatic source mode / local cursor client — 2026-09-24
+
+Local Mac arm64 Qt 6.11.2 application and test binaries compile/link. Qt offline suite
+17/17 passed; Python pinned-source and exact-overlay regressions 3/3 passed. Dynamic
+loopback covers jitter, changed mode, deferred-cleanup guard, cancellation, asynchronous
+networking and no-signal wait. Internal transport stops no longer use SDL_QUIT; atomic
+pending fallback covers event registration/queue failure. This is synthetic lifecycle
+validation, not actual HDMI mode-switch or Windows cursor presentation acceptance.
+Native Windows build is running in project-owned VM9006; no new delivery claim yet.
+
+
+### Native Windows automatic-display delivery (final)
+
+VM9006 env-completed lineage; Qt6.8.3 / VS2022 x64 Release, snapshot 1b610d1bf94a.
+Automatic bind/launch, exception reset, forced quitAppAfter and unique rkmoon_main.cpp
+are included. Windows Qt17/17, gain and clean-PATH 4-second smoke passed. Initial
+runner DLL/plugin path and output quoting issues were fixed before the passing run.
+Delivered smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64-auto-display-1b610d1bf94a.zip
+29,321,156 bytes; final readback SHA256
+475e71cd6ce075768fb819b078c6a7297c05cce5ed01528ef90ddb90d1705c07.
+Sidecar readback passed. No actual HDMI client rendering/cursor/switching acceptance.
+Legacy SSH lease closed, sshd stopped/manual, controller key deleted. VM9006 stopped
+(after PVE shutdown timeout, guest finished naturally; no force-stop). VM200 stopped.
+Same-project cache retained; cleanup deadline 2026-09-25 11:11:02 CST. Reopen legacy
+SSH via QGA on resume, do not retrofit env-admin-ssh credentials.
+
+
+### First-frame exit fix — b49e86cccbc3
+
+Root cause confirmed in real SDL cold-process regression: SDL_RegisterEvents allocated
+0x8000, colliding with Moonlight hardcoded SDL_USEREVENT frame-ready/barrier events.
+The old internal-stop type branch therefore exited on the first ordinary event.
+Fix removes custom event allocation and uses only atomic pending stop, checked within
+the existing 20ms SDL loop. No server/source change. Old 1b610d1 package is superseded.
+Windows Qt6.8.3 / VS2022 Release: cold SDL slot 3/3 (including init/cleanup), full Qt18/18,
+gain and clean-PATH 4s smoke passed; Mac cold3/3/full18/18, Python3/3 passed.
+SMB Target RKMoon-Windows-x64-auto-display-exitfix-b49e86cccbc3.zip: 29,320,927 bytes;
+full destination readback and sidecar passed. SHA256
+ e9b6e076f0d19dfd195076b58798cd8c2568eb2124edc3b77f60298ffc5a6f5d
+Still requires user live HDMI playback confirmation; synthetic/queue tests do not
+claim actual rendered-stream acceptance.
+
+Exit-fix cleanup: VM9006/VM200 stopped; legacy lease closed, sshd stopped/manual,
+controller key deleted. Cleanup deadline 2026-09-25 11:30:41 CST.
+
+
+## Windows dual mouse modes — c6b7b7db715c (2026-09-24)
+
+Delivered smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64-mouse-modes-c6b7b7db715c.zip
+29,324,997 bytes; SHA256 e6fe614dc07c7956764855118253c547290298ae2551a610de4be3e11baa6f53.
+Target full readback and sidecar passed. Windows Qt6.8.3 / VS2022 x64 Release,
+Qt22/22, cold SDL regression3/3 (init/cleanup included), gain and clean-PATH4s smoke passed.
+Absolute(default)/relative persisted GUI selection; absolute capability required,
+legacy missing capabilities permit only explicit relative. Both launch/resume send
+rkmoonMouseMode before any lease. CtrlAltShiftC changes visibility only. Direct touch
+is ALWAYS mouse emulation even when host advertises native touch, avoiding silent no-op.
+Aspect-fit mapping rejects black-bar press/down, clamps last video pixel, preserves
+active drag release. Tests cover non16:9, HiDPI-equivalent units, source aspect changes.
+Actual packaged-client HID position/HiDPI/touch/stream switching not yet live-verified.
+Requires new server capability+launch mode support; no server/hardware changes by client agent.
+
+Dual-mode cleanup: VM9006/VM200 stopped, legacy SSH lease closed, sshd stopped/manual,
+controller key deleted. Same-project destruction deadline 2026-09-25 12:16:14 CST.
+
+
+## Windows common wake-fix / unpacked delivery — 0fb281698fd2
+
+Delivered runnable folder: smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64
+(local mount /Volumes/ZSSD/Target/RKMoon-Windows-x64; run rkmoon-client.exe).
+All 40 payload files, 69,670,665 bytes, were read back and checked by size/SHA256
+in staging and again after promotion. delivery-manifest.json SHA256:
+82012d23f635f24404b85bac2cbf97ebcf6eff202a3e16c837c977e5b07c2d12.
+No new final ZIP is left in Target; parent owns old version ZIP/sidecar cleanup.
+
+Windows snapshot: 0fb281698fd2385854b43e3888ef328c61064df0 (clone only; shared repo uncommitted).
+Qt6.8.3 / VS2022 x64 Release built in a new rkmoon-common-fix shadow tree.
+Build log contains Connection.c; new Connection.obj and common library were produced
+before the final application link. Connection.obj SHA256:
+6c9d4d69c10785c6403b09ff7755fb410f05ee09ec6738a301d06bffe0694094.
+Pinned common8599b6042a4ba27749b0f94134dd614b4328a9bc transformed Connection.c SHA256:
+a291563193baee41984ed10c8ad1b941998fe899a53f28b2634a23f270700650.
+Overlay SHA256 b62e7a72809eb97232208ebbf8dc575cda78e1f0109d110577e350a533c0ad16.
+The exact post-connect relative wake-jiggle and its waits are removed; strict server
+wrong-mode rejection remains unchanged. c6b7b7db715c is superseded for this defect.
+
+Main-window Mouse mode selector persists absolute/relative choice and is disabled
+while connecting, polling, streaming, or cleaning up. Settings contains bitrate/codec.
+CtrlAltShiftC remains visibility-only. Python4/4, Mac Qt22/22, Windows Qt22/22,
+separate cold SDL3/3 (includes init/cleanup), gain and clean-PATH4s smoke passed.
+These are source/offline/synthetic/startup results. Real streaming, touch, absolute
+position and live mode-follow behavior of this final executable await live acceptance.
+No server, T6 or Znas source changes were made by the client agent.
+
+Legacy SSH lease closed, sshd stopped/manual; controller keys and internal transfer
+archive deleted. VM9006 and VM200 stopped. Build environment intentionally retained
+for same-project reuse; inactivity cleanup deadline 2026-09-25 13:17:43 CST.

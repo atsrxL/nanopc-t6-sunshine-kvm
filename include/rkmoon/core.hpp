@@ -21,8 +21,11 @@ struct Message { Header h; std::vector<uint8_t> bytes; };
 struct Config {
   uint32_t width=1920, height=1080, fps_x100=6000, bitrate=20000000, gop=60;
   Codec codec=Codec::hevc;
+  bool allow_1440p90_experiment=false;
   void validate() const;
 };
+// MPP level values use level_idc*3 for HEVC and level_idc for AVC.
+int mpp_video_level(const Config&);
 uint64_t now_us();
 std::array<uint8_t,header_size> pack(const Header&);
 Header unpack(const uint8_t*, size_t);

@@ -3,8 +3,12 @@
 """Commit-locked, fail-closed moonlight-qt overlay for the minimal KVM client. Default operation is a dry run.
 
 The overlay removes unshipped controller/QML/Discord/SVG features, disables absolute mouse
-switching, redacts HTTP request/response logging and adds post-Opus mute/volume attenuation.
-Video transport, decoding, pairing crypto and encrypted input packet implementations are retained.
+switching, redacts HTTP request/response logging, adds post-Opus mute/volume attenuation and
+attaches the RKMoon password credential to requests that target the bound host, and points
+every upstream request at the server's single plaintext HTTP base port. Video transport,
+decoding and encrypted input packet implementations are retained. GameStream PIN pairing is
+not patched out here: nvpairingmanager is simply not compiled by client/app/rkmoon-app.pro,
+because this server has no /pair endpoint.
 """
 import argparse
 import difflib
@@ -22,6 +26,9 @@ FILES = [
     "app/streaming/input/input.h",
     "app/settings/streamingpreferences.cpp",
     "app/streaming/input/input.cpp",
+    "app/streaming/input/keyboard.cpp",
+    "app/streaming/input/mouse.cpp",
+    "app/streaming/input/abstouch.cpp",
     "app/streaming/audio/audio.cpp",
     "app/streaming/session.cpp",
     "app/backend/nvhttp.cpp",
@@ -209,6 +216,89 @@ AUDIO_GAIN_REPLACEMENT = """        // Update desiredSize with the number of byt
 """
 
 
+HTTP_AUTH_ANCHOR = """    QNetworkRequest request(url);
+
+    // Add our client certificate
+    request.setSslConfiguration(IdentityManager::get()->getSslConfig());
+"""
+
+HTTP_AUTH_REPLACEMENT = """    RkmoonAuth::prepareSessionUrl(url, command);
+    QNetworkRequest request(url);
+
+    // RKMoon minimal KVM client: the upstream client certificate is deliberately not
+    // installed. This server has no TLS listener and never asks for a client
+    // certificate, so IdentityManager is not compiled into this client at all and no
+    // RSA identity key or certificate is generated or stored on this machine.
+    //
+    // Instead, this server authorizes every request with a password. The credential is
+    // added only for the one bound http://host:port. Every request the client makes,
+    // including the streaming session's launch/resume/cancel, goes through this
+    // function. The password is never part of the URL, so it cannot reach a log, and it
+    // is never attached to another host, port or scheme. This call also forces manual
+    // redirect handling for every request.
+    RkmoonAuth::prepareRequest(request, url);
+"""
+
+
+# This server exposes all six endpoints on one plaintext HTTP base port and reports
+# HttpsPort=0. Upstream would otherwise send applist/launch/resume/cancel/appasset to
+# https://host:47984, and NvComputer would substitute the default HTTPS port for the
+# zero the server reports. Redirecting the "HTTPS" base URL onto the same HTTP base port
+# keeps every upstream call site unchanged while speaking the server's actual protocol.
+HTTPS_SCHEME_ANCHOR = """    m_BaseUrlHttp.setScheme("http");
+    m_BaseUrlHttps.setScheme("https");
+"""
+
+HTTPS_SCHEME_REPLACEMENT = """    m_BaseUrlHttp.setScheme("http");
+    // RKMoon minimal KVM client: the dedicated server has no TLS listener. The upstream
+    // "HTTPS" base URL is deliberately the same plaintext HTTP origin as the base URL.
+    m_BaseUrlHttps.setScheme("http");
+"""
+
+HTTPS_ADDRESS_ANCHOR = """    m_BaseUrlHttp.setHost(address.address());
+    m_BaseUrlHttps.setHost(address.address());
+
+    m_BaseUrlHttp.setPort(address.port());
+}
+"""
+
+HTTPS_ADDRESS_REPLACEMENT = """    m_BaseUrlHttp.setHost(address.address());
+    m_BaseUrlHttps.setHost(address.address());
+
+    m_BaseUrlHttp.setPort(address.port());
+    // RKMoon minimal KVM client: one base port serves every endpoint.
+    m_BaseUrlHttps.setPort(address.port());
+}
+"""
+
+HTTPS_PORT_ANCHOR = """void NvHTTP::setHttpsPort(uint16_t port)
+{
+    m_BaseUrlHttps.setPort(port);
+}
+"""
+
+HTTPS_PORT_REPLACEMENT = """void NvHTTP::setHttpsPort(uint16_t port)
+{
+    // RKMoon minimal KVM client: the server reports HttpsPort=0 and listens on nothing
+    // else, so a separate TLS port is never adopted. Callers that pass the upstream
+    // default, or the value NvComputer substitutes for zero, keep using the base port.
+    Q_UNUSED(port);
+    m_BaseUrlHttps.setPort(m_BaseUrlHttp.port());
+}
+"""
+
+
+CURSOR_ANCHOR = '        if (!SDL_GetRelativeMouseMode()) {\n            m_MouseCursorCapturedVisibilityState = !m_MouseCursorCapturedVisibilityState;\n            SDL_ShowCursor(m_MouseCursorCapturedVisibilityState);\n        }\n        else {\n            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,\n                        "Cursor can only be shown in remote desktop mouse mode");\n        }\n'
+CURSOR_REPLACEMENT = '        // Toggle local visibility only; preserve absolute/relative protocol mode.\n        setCaptureActive(false);\n        m_MouseCursorCapturedVisibilityState = !m_MouseCursorCapturedVisibilityState;\n        setCaptureActive(true);\n'
+CAPTURE_ANCHOR = "if (m_AbsoluteMouseMode || SDL_SetRelativeMouseMode(SDL_TRUE) < 0) {"
+PUMP_ANCHOR = "    SDL_Event event;\n    for (;;) {\n"
+
+TERMINATE_ANCHOR = '    SDL_Event event;\n    event.type = SDL_QUIT;\n    event.quit.timestamp = SDL_GetTicks();\n    SDL_PushEvent(&event);\n'
+
+POINTER_CLAMP_ANCHOR = '        // Clamp motion to the video region\n        x = qMin(qMax(x - dst.x, 0), dst.w);\n        y = qMin(qMax(y - dst.y, 0), dst.h);\n'
+POINTER_TOUCH_ANCHOR = '        short x = qMin(qMax((int)(event->x * windowWidth), dst.x), dst.x + dst.w);\n        short y = qMin(qMax((int)(event->y * windowHeight), dst.y), dst.y + dst.h);\n\n        // Update the cursor position relative to the video region\n        LiSendMousePositionEvent(x - dst.x, y - dst.y, dst.w, dst.h);'
+POINTER_INSIDE_ANCHOR = '    return (mouseX >= dst.x && mouseX <= dst.x + dst.w) &&\n           (mouseY >= dst.y && mouseY <= dst.y + dst.h);'
+
 def make_changes(original):
     changes = {}
     for path, text in original.items():
@@ -227,20 +317,39 @@ def make_changes(original):
             text = once(text, PREFS_RETRANSLATE_HEAD_ANCHOR, "")
             text = once(text, PREFS_RETRANSLATE_TAIL_ANCHOR, PREFS_RETRANSLATE_TAIL_REPLACEMENT)
         elif path == "app/streaming/input/input.h":
+            text = once(text, '    bool m_AbsoluteTouchMode;', '    bool m_AbsoluteTouchMode;\n    QSet<SDL_FingerID> m_RkmoonAcceptedTouches;')
+            text = once(text, '#pragma once', '#pragma once\n#include <QSet>')
             # ComputerManager pulls in qmdnsengine (mDNS discovery), which this client does not use.
             text = once(text, '#include "backend/computermanager.h"',
                         '#include "backend/nvcomputer.h" // RKMoon: was backend/computermanager.h (no mDNS discovery)')
         elif path == "app/streaming/input/input.cpp":
+            text = once(text, "m_MouseCursorCapturedVisibilityState(SDL_DISABLE)", "m_MouseCursorCapturedVisibilityState(prefs.absoluteMouseMode ? SDL_ENABLE : SDL_DISABLE)")
+            text = once(text, CAPTURE_ANCHOR, "if (m_AbsoluteMouseMode || m_MouseCursorCapturedVisibilityState == SDL_ENABLE || SDL_SetRelativeMouseMode(SDL_TRUE) < 0) {")
             text = once(text, GAMEPAD_INIT_ANCHOR, GAMEPAD_INIT_REPLACEMENT)
             text = once(text, GAMEPAD_MASK_ANCHOR, GAMEPAD_MASK_REPLACEMENT)
             text = once(text, GAMEPAD_QUIT_ANCHOR, GAMEPAD_QUIT_REPLACEMENT)
             text = once(text, '    m_SpecialKeyCombos[KeyComboToggleMouseMode].enabled = true;',
                         '    m_SpecialKeyCombos[KeyComboToggleMouseMode].enabled = false; // Relative HID only')
+        elif path == "app/streaming/input/mouse.cpp":
+            text = once(text, '#include "input.h"\n', '#include "input.h"\n#include "rkmoon_pointer.h"\n')
+            text = once(text, POINTER_CLAMP_ANCHOR, '        const auto position = RkmoonPointer::position(x, y, dst);\n        x = position.x;\n        y = position.y;\n')
+            text = once(text, POINTER_INSIDE_ANCHOR, '    return RkmoonPointer::inside(mouseX, mouseY, dst);')
+        elif path == "app/streaming/input/abstouch.cpp":
+            text = once(text, '#include "input.h"\n', '#include "input.h"\n#include "rkmoon_pointer.h"\n')
+            text = once(text, 'if (LiGetHostFeatureFlags() & LI_FF_PEN_TOUCH_EVENTS) {', 'if (false) { // Dedicated RKMoon host: always emulate absolute mouse, never native touch')
+            text = once(text, POINTER_TOUCH_ANCHOR, '        const auto point = RkmoonPointer::position(event->x * windowWidth, event->y * windowHeight, dst);\n        LiSendMousePositionEvent(point.x, point.y, dst.w, dst.h);')
+            text = once(text, '    // Scale window-relative events to be video-relative and clamp to video region\n    StreamUtils::scaleSourceToDestinationSurface(&src, &dst);', '    // Scale window-relative events to be video-relative and clamp to video region\n    StreamUtils::scaleSourceToDestinationSurface(&src, &dst);\n    if (event->type == SDL_FINGERDOWN) {\n        if (!RkmoonPointer::inside(event->x * windowWidth, event->y * windowHeight, dst)) return;\n        m_RkmoonAcceptedTouches.insert(event->fingerId);\n    } else if (!m_RkmoonAcceptedTouches.contains(event->fingerId)) return;\n    if (event->type == SDL_FINGERUP) m_RkmoonAcceptedTouches.remove(event->fingerId);')
+        elif path == "app/streaming/input/keyboard.cpp":
+            text = once(text, CURSOR_ANCHOR, CURSOR_REPLACEMENT)
         elif path == "app/streaming/audio/audio.cpp":
             text = once(text, '#include "renderers/sdl.h"\n',
                         '#include "renderers/sdl.h"\n#include "rkmoon_audio_control.h"\n')
             text = once(text, AUDIO_GAIN_ANCHOR, AUDIO_GAIN_REPLACEMENT)
         elif path == "app/streaming/session.cpp":
+            text = once(text, PUMP_ANCHOR, PUMP_ANCHOR + "        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);\n        if (RkmoonSessionControl::internalQuitPending.exchange(false)) goto DispatchDeferredCleanup;\n")
+            text = once(text, "SDL_WaitEventTimeout(&event, 1000)", "SDL_WaitEventTimeout(&event, 20)")
+            text = once(text, '#include <QCursor>\n', '#include <QCursor>\n#include "rkmoon_session_control.h"\n')
+            text = once(text, TERMINATE_ANCHOR, '    RkmoonSessionControl::stop();\n')
             # Upstream SVG window icon is absent from this client; don't require QtSvg.
             text = once(text, '#include "backend/richpresencemanager.h"\n', '')
             text = once(text, '#include <QSvgRenderer>\n', '')
@@ -258,7 +367,12 @@ def make_changes(original):
         elif path == "app/backend/nvhttp.cpp":
             # Launch URLs contain rikey and pairing requests contain authentication
             # material. Never log URL query strings or launch response bodies.
-            text = once(text, '#include "nvcomputer.h"\n', '#include "nvcomputer.h"\n#include "rkmoon_http_log.h"\n')
+            text = once(text, '#include "nvcomputer.h"\n',
+                        '#include "nvcomputer.h"\n#include "rkmoon_auth.h"\n#include "rkmoon_http_log.h"\n')
+            text = once(text, HTTP_AUTH_ANCHOR, HTTP_AUTH_REPLACEMENT)
+            text = once(text, HTTPS_SCHEME_ANCHOR, HTTPS_SCHEME_REPLACEMENT)
+            text = once(text, HTTPS_ADDRESS_ANCHOR, HTTPS_ADDRESS_REPLACEMENT)
+            text = once(text, HTTPS_PORT_ANCHOR, HTTPS_PORT_REPLACEMENT)
             text = once(text, 'qInfo() << "Executing request:" << url.toString();',
                         'rkmoonLogHttpRequest(command);')
             text = once(text, 'qWarning() << "Aborting timed out request for" << url.toString();',
@@ -277,6 +391,31 @@ def git(repo, *args):
     return subprocess.check_output(["git", "-C", str(repo), *args], text=True).rstrip('\n')
 
 
+COMMON_PATH = "moonlight-common-c/moonlight-common-c"
+COMMON_FILE = COMMON_PATH + "/src/Connection.c"
+COMMON_PIN = "8599b6042a4ba27749b0f94134dd614b4328a9bc"
+COMMON_WAKE = """    // Wiggle the mouse a bit to wake the display up
+    LiSendMouseMoveEvent(1, 1);
+    PltSleepMs(10);
+    LiSendMouseMoveEvent(-1, -1);
+    PltSleepMs(10);
+"""
+
+def common_change(repo):
+    nested = repo / COMMON_PATH
+    if git(nested, "rev-parse", "HEAD") != COMMON_PIN:
+        raise PatchError("moonlight-common-c HEAD does not match audited pin")
+    original = subprocess.check_output(['git', '-C', str(nested), 'show', 'HEAD:src/Connection.c'], text=True)
+    changed = once(original, COMMON_WAKE,
+                   "    // RKMoon HDMI: no synthetic relative motion on connection.\n")
+    for line in git(nested, "status", "--porcelain").splitlines():
+        if line[3:] != "src/Connection.c":
+            raise PatchError("unrelated moonlight-common-c edits")
+    if (repo / COMMON_FILE).read_text() not in (original, changed):
+        raise PatchError("unknown Connection.c changes")
+    return original, changed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repository", type=Path, help="independent pinned moonlight-qt checkout")
@@ -290,16 +429,22 @@ def main():
     original = {p: subprocess.check_output(['git', '-C', str(repo), 'show', 'HEAD:' + p], text=True)
                 for p in FILES}
     changes = make_changes(original)
+    common_original, common_patched = common_change(repo)
+    original[COMMON_FILE] = common_original
+    changes[COMMON_FILE] = common_patched
+    paths = [*FILES, COMMON_FILE]
     dirty = git(repo, "status", "--porcelain").splitlines()
     for line in dirty:
         path = line[3:]
+        if path == COMMON_PATH:
+            continue # nested pin and every dirty file checked by common_change
         if path not in FILES or (repo / path).read_text() not in (original[path], changes[path]):
             raise PatchError("checkout contains unrelated edits; refuse to overwrite local work")
-    if args.apply and any((repo / p).read_text() != original[p] for p in FILES):
+    if args.apply and any((repo / p).read_text() != original[p] for p in paths):
         raise PatchError("apply requires all original files; use a fresh pinned checkout")
     diff = "".join("".join(difflib.unified_diff(original[p].splitlines(True),
                                                 changes[p].splitlines(True),
-                                                fromfile="a/" + p, tofile="b/" + p)) for p in FILES)
+                                                fromfile="a/" + p, tofile="b/" + p)) for p in paths)
     if args.patch_output:
         args.patch_output.write_text(diff)
     if args.apply:
@@ -314,7 +459,9 @@ def main():
             raise
     print(json.dumps({"commit": PIN,
                       "operation": "applied" if args.apply else "check-only",
-                      "changed_files": len(FILES),
+                      "changed_files": len(paths),
+                      "common_commit": COMMON_PIN,
+                      "common_source_sha256": hashlib.sha256(common_patched.encode()).hexdigest(),
                       "patch_sha256": hashlib.sha256(diff.encode()).hexdigest(),
                       "patch_lines": len(diff.splitlines())}, indent=2))
 

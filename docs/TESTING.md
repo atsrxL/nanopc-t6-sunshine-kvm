@@ -1,5 +1,7 @@
 # 测试说明与证据等级
 
+> 最新要求：HTTP＋密码，取消HTTPS/证书验证；默认密码 `kvm`，Windows为主要客户端。此条取代下文旧TLS/TOFU要求，见 [ADR-005](ADR-005-http-password.md)。
+
 ## E0：离线纯逻辑
 
 `tools/build.sh offline`运行原生25项及Python/联合工具68项。ASan/UBSan另行运行。测试fake kvmd、短NAL字节夹具、模拟source anchors都是测试数据，不是生产路径。`rkmoon-hid-fixture`不会被链接/安装到worker。
@@ -26,7 +28,7 @@ IDR实验使用GOP120+1秒强制请求，检查约第60帧额外IDR与inline参�
 
 P2先video-only、无HDR、实际1080p60。保存客户端系统/version/GPU/decoder/刷新率、硬解状态、接收/解码/render统计，不只保存服务端fps。10分钟内采样CPU/温度/内存、错误/队列高水位/延迟是否持续增长。
 
-分别协商HEVC与H264；不支持HEVC时明确报错或重连H264。验证无网页的同UID Unix PIN CLI、错误PIN、碎片socket读写、正常退出、立即重连、恢复关键帧。最小服务音频需另测显式 HDMI ALSA `hw:` 设备真正来自被控机、5/10/20ms 48k stereo Opus/RTP、96kbps/高质量512kbps、静音期间 RTP 连续性、源首次缺失/后接入、运行中丢失/重接、xrun与调度积压后的音画同步；ALSA `null`/stub 只算离线能力探测，不能冒充 HDMI/客户端声音。测试第二客户端拒绝且第一会话不受影响。HDMI拔插/无信号/同尺寸format/color变化/分辨率变化应干净结束，不能继续虚报旧尺寸。
+分别协商HEVC与H264；不支持HEVC时明确报错或重连H264。验证 IP＋密码连接、错误/缺失密码拒绝、旧 pair 入口不可用、无HTTPS监听/无证书生成、正常退出、立即重连、主机重启后身份保持、恢复关键帧。最小服务音频需另测显式 HDMI ALSA `hw:` 设备真正来自被控机、5/10/20ms 48k stereo Opus/RTP、96kbps/高质量512kbps、静音期间 RTP 连续性、源首次缺失/后接入、运行中丢失/重接、xrun与调度积压后的音画同步；ALSA `null`/stub 只算离线能力探测，不能冒充 HDMI/客户端声音。测试第二客户端拒绝且第一会话不受影响。HDMI拔插/无信号/同尺寸format/color变化/分辨率变化应干净结束，不能继续虚报旧尺寸。
 
 P3在用户授权且mouse.absolute=false后进行：在被控电脑上看到真实键鼠效果，验证修饰键/组合键、按住、双击、滚轮、断开后release。确认T6本地没收到uinput事件。kill/断网测试作用域限定本实例。
 

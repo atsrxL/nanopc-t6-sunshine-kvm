@@ -9,7 +9,6 @@
 #define SER_HTTPPORT "host/httpPort"
 #define SER_NAME "host/name"
 #define SER_UUID "host/uuid"
-#define SER_CERT "host/serverCert"
 #define SER_APPID "host/appId"
 #define SER_APPNAME "host/appName"
 #define SER_WIDTH "video/width"
@@ -33,20 +32,19 @@ KvmConfig::KvmConfig()
 void KvmConfig::load()
 {
     QSettings settings;
+    mouseMode = settings.value("input/mouseMode", 0).toInt() == 1 ? MOUSE_RELATIVE : MOUSE_ABSOLUTE;
 
     address = settings.value(SER_ADDRESS).toString();
     httpPort = static_cast<quint16>(qBound(1u, settings.value(SER_HTTPPORT, 47989).toUInt(), 65535u));
     hostName = settings.value(SER_NAME).toString();
     hostUuid = settings.value(SER_UUID).toString();
-    serverCertPem = settings.value(SER_CERT).toByteArray();
     appId = settings.value(SER_APPID, 0).toInt();
     // The dedicated RK3588 server publishes exactly one app named "HDMI".
     appName = settings.value(SER_APPNAME, "HDMI").toString();
 
-    width = qBound(640, settings.value(SER_WIDTH, 1920).toInt(), 3840);
-    height = qBound(480, settings.value(SER_HEIGHT, 1080).toInt(), 2160);
-    fps = qBound(24, settings.value(SER_FPS, 60).toInt(), 120);
-    bitrateKbps = qBound(1000, settings.value(SER_BITRATE, 20000).toInt(), 80000);
+    // Dimensions are session metadata, never a persisted manual override.
+    width = 1920; height = 1080; fps = 60;
+    bitrateKbps = qBound(1000, settings.value(SER_BITRATE, 20000).toInt(), 35000);
     codec = static_cast<Codec>(qBound(0, settings.value(SER_CODEC, CODEC_AUTO).toInt(), 2));
     fullScreen = settings.value(SER_FULLSCREEN, true).toBool();
     vsync = settings.value(SER_VSYNC, true).toBool();
@@ -62,17 +60,17 @@ void KvmConfig::save() const
 {
     QSettings settings;
 
+    settings.setValue("input/mouseMode", static_cast<int>(mouseMode));
     settings.setValue(SER_ADDRESS, address);
     settings.setValue(SER_HTTPPORT, httpPort);
     settings.setValue(SER_NAME, hostName);
     settings.setValue(SER_UUID, hostUuid);
-    settings.setValue(SER_CERT, serverCertPem);
     settings.setValue(SER_APPID, appId);
     settings.setValue(SER_APPNAME, appName);
 
-    settings.setValue(SER_WIDTH, width);
-    settings.setValue(SER_HEIGHT, height);
-    settings.setValue(SER_FPS, fps);
+    settings.remove(SER_WIDTH);
+    settings.remove(SER_HEIGHT);
+    settings.remove(SER_FPS);
     settings.setValue(SER_BITRATE, bitrateKbps);
     settings.setValue(SER_CODEC, static_cast<int>(codec));
     settings.setValue(SER_FULLSCREEN, fullScreen);
@@ -100,7 +98,7 @@ void KvmConfig::applyTo(StreamingPreferences& prefs) const
     prefs.width = width;
     prefs.height = height;
     prefs.fps = fps;
-    prefs.bitrateKbps = bitrateKbps;
+    prefs.bitrateKbps = qBound(1000, bitrateKbps, 35000);
     prefs.unlockBitrate = true;
     prefs.packetSize = 0; // Preserve upstream path-MTU and LAN/VPN selection.
 
@@ -130,10 +128,9 @@ void KvmConfig::applyTo(StreamingPreferences& prefs) const
     prefs.enableVsync = vsync;
     prefs.framePacing = framePacing;
 
-    // Relative mouse mode matches the host's relative USB HID descriptor. Absolute mouse
-    // mode would require the host to expose an absolute HID device.
-    prefs.absoluteMouseMode = false;
-    prefs.absoluteTouchMode = false;
+    // Relative touch is a trackpad; absolute touch uses direct video coordinates.
+    prefs.absoluteMouseMode = mouseMode == MOUSE_ABSOLUTE;
+    prefs.absoluteTouchMode = mouseMode == MOUSE_ABSOLUTE;
     prefs.captureSysKeysMode = captureSystemKeys ? StreamingPreferences::CSK_FULLSCREEN
                                                  : StreamingPreferences::CSK_OFF;
 
@@ -154,7 +151,7 @@ void KvmConfig::applyTo(StreamingPreferences& prefs) const
     prefs.playAudioOnHost = false;
     prefs.muteOnFocusLoss = false;
 
-    prefs.quitAppAfter = quitAppOnDisconnect;
+    prefs.quitAppAfter = true; // Dedicated HDMI sessions always release the old host app.
     prefs.keepAwake = true;
     prefs.connectionWarnings = true;
 }

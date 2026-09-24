@@ -28,12 +28,12 @@ std::string encode(const HidEvent& e){
   switch(e.type){
     case HidEvent::key:s+="key\",\"vk\":"+std::to_string(e.a)+",\"down\":"+(e.down?"true":"false");break;
     case HidEvent::button:s+="button\",\"button\":"+std::to_string(e.a)+",\"down\":"+(e.down?"true":"false");break;
-    case HidEvent::move:case HidEvent::wheel:s+=(e.type==HidEvent::move?"move":"wheel");s+="\",\"x\":"+std::to_string(e.a)+",\"y\":"+std::to_string(e.b);break;
+    case HidEvent::move:case HidEvent::wheel:case HidEvent::absolute:s+=(e.type==HidEvent::move?"move":e.type==HidEvent::absolute?"absolute":"wheel");s+="\",\"x\":"+std::to_string(e.a)+",\"y\":"+std::to_string(e.b);break;
   }
   return s+"}\n";
 }
 }
-HidClient::HidClient(const std::string& path):fd_(socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0)) {
+HidClient::HidClient(const std::string& path,bool absolute_mouse):fd_(socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0)),absolute_mouse_(absolute_mouse) {
   sockaddr_un addr{};addr.sun_family=AF_UNIX;
   if(fd_.get()<0||path.empty()||path.size()>=sizeof(addr.sun_path)||path[0]!='/')throw std::runtime_error("invalid HID socket/path");
   std::memcpy(addr.sun_path,path.c_str(),path.size()+1);
@@ -43,7 +43,7 @@ HidClient::HidClient(const std::string& path):fd_(socket(AF_UNIX,SOCK_STREAM|SOC
   int error=0;socklen_t len=sizeof(error);if(getsockopt(fd_.get(),SOL_SOCKET,SO_ERROR,&error,&len)||error)throw std::runtime_error("HID socket error");
   ucred cred{};len=sizeof(cred);
   if(getsockopt(fd_.get(),SOL_SOCKET,SO_PEERCRED,&cred,&len)||cred.uid!=geteuid())throw std::runtime_error("HID server UID mismatch");
-  transmit(fd_.get(),"{\"op\":\"hello\",\"version\":1}\n");
+  transmit(fd_.get(),std::string("{\"op\":\"hello\",\"version\":1,\"mouse_mode\":\"")+(absolute_mouse?"absolute":"relative")+"\"}\n");
   std::string reply;auto end=now_us()+2000000;
   while(now_us()<end&&reply.size()<128){
     if(!readable(fd_.get(),std::chrono::milliseconds(20)))continue;
@@ -58,10 +58,17 @@ HidClient::HidClient(const std::string& path):fd_(socket(AF_UNIX,SOCK_STREAM|SOC
 HidClient::~HidClient(){stop_=true;cv_.notify_all();if(thread_.joinable())thread_.join();fd_.reset();}
 bool HidClient::submit(HidEvent e){
   if(!healthy_||stop_)return false;
+  if((e.type==HidEvent::absolute&&!absolute_mouse_)||(e.type==HidEvent::move&&absolute_mouse_)){
+    healthy_=false;cv_.notify_all();return false; // Revoke rather than send to the wrong USB output.
+  }
   bool valid=(e.type==HidEvent::key&&e.a>=0&&e.a<=255)||(e.type==HidEvent::button&&e.a>=1&&e.a<=5)||
-    ((e.type==HidEvent::move||e.type==HidEvent::wheel)&&e.a>=-32767&&e.a<=32767&&e.b>=-32767&&e.b<=32767);
+    ((e.type==HidEvent::move||e.type==HidEvent::wheel)&&e.a>=-32767&&e.a<=32767&&e.b>=-32767&&e.b<=32767)||
+    (e.type==HidEvent::absolute&&e.a>=-32768&&e.a<=32767&&e.b>=-32768&&e.b<=32767);
   if(!valid){healthy_=false;cv_.notify_all();return false;}
   std::lock_guard lock(mutex_);
+  if(e.type==HidEvent::absolute&&!events_.empty()&&events_.back().type==HidEvent::absolute){
+    events_.back()=e;return true; // Latest position only; never cross a button/key/wheel edge.
+  }
   if(e.type==HidEvent::move&&!events_.empty()&&events_.back().type==HidEvent::move){
     int x=events_.back().a+e.a,y=events_.back().b+e.b;
     if(x>=-32767&&x<=32767&&y>=-32767&&y<=32767){events_.back().a=x;events_.back().b=y;return true;}

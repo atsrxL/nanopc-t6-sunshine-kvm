@@ -17,7 +17,8 @@ def parse_event(e):
         raise InputError("invalid input event")
     op = e["op"]
     allowed = {"ping":{"op"}, "bye":{"op"}, "key":{"op","vk","down"},
-               "button":{"op","button","down"}, "move":{"op","x","y"}, "wheel":{"op","x","y"}}
+               "button":{"op","button","down"}, "move":{"op","x","y"}, "wheel":{"op","x","y"},
+               "absolute":{"op","x","y"}}
     if op not in allowed or set(e) != allowed[op]:
         raise InputError("unsupported input event/fields")
     if op in {"key","button"}:
@@ -30,6 +31,8 @@ def parse_event(e):
             raise InputError("unsupported mouse button")
     elif op in {"move","wheel"}:
         integer(e,"x"); integer(e,"y")
+    elif op=="absolute":
+        integer(e,"x",-32768,32767); integer(e,"y",-32768,32767)
     return e
 
 class Queue:
@@ -37,6 +40,8 @@ class Queue:
         self.items=deque(); self.capacity=capacity; self.ready=asyncio.Event(); self.highwater=0
     def put(self, event):
         # Merge only ADJACENT motion. Never cross a key/button/wheel edge or lose a release.
+        if event["op"]=="absolute" and self.items and self.items[-1]["op"]=="absolute":
+            self.items[-1]=event;return
         if event["op"]=="move" and self.items and self.items[-1]["op"]=="move":
             last=self.items[-1]; x,y=last["x"]+event["x"],last["y"]+event["y"]
             if abs(x)<=32767 and abs(y)<=32767:
@@ -54,8 +59,9 @@ def chunks(x,y):
         a=max(-127,min(127,x)); b=max(-127,min(127,y)); yield a,b; x-=a;y-=b
 
 class Lease:
-    def __init__(self, backend):
+    def __init__(self, backend, mouse_mode="relative"):
         self.backend=backend
+        self.mouse_mode=mouse_mode
         self.virtual=set() # Down VK aliases, only in memory. Never log or persist these sets.
         self.possibly_down=set(); self.buttons=set()
         self.wheel_x=self.wheel_y=0
@@ -83,8 +89,12 @@ class Lease:
             elif b in self.buttons:
                 await self.backend.button(b,False);self.buttons.discard(b)
         elif op=="move":
+            if self.mouse_mode!="relative":raise InputError("motion differs from lease mode")
             for x,y in chunks(e["x"],e["y"]):
                 await self.backend.move(x,y)
+        elif op=="absolute":
+            if self.mouse_mode!="absolute":raise InputError("motion differs from lease mode")
+            await self.backend.absolute(e["x"],e["y"])
         elif op=="wheel":
             self.wheel_x+=e["x"];self.wheel_y+=e["y"]
             # Truncate toward zero so fractional negative scrolling is not rounded to a full notch.

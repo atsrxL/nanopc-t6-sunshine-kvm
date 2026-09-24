@@ -7,6 +7,12 @@ import subprocess
 p=Path(__file__).resolve().parents[1]/'tools/apply_sunshine.py'
 spec=importlib.util.spec_from_file_location('apply_sunshine',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class OverlayTests(unittest.TestCase):
+    def test_pinned_absolute_mouse_forward(self):
+        repo=p.parents[1]/'vendor/sunshine'
+        original=subprocess.check_output(['git','-C',str(repo),'show',m.PIN+':src/platform/virtualhid_input.cpp'],text=True)
+        changed=m.make_changes({'src/platform/virtualhid_input.cpp':original})['src/platform/virtualhid_input.cpp']
+        self.assertEqual(changed.count('rkmoon_sunshine::absolute(touch_port, x, y);'),1)
+        self.assertIn('No T6 uinput/libvirtualhid devices.',changed)
     def test_platform_sources_can_find_bridge_header(self):
         cmake=m.make_changes({'CMakeLists.txt':'# setup compile definitions\n# target definitions\n'})['CMakeLists.txt']
         self.assertIn('"${CMAKE_CURRENT_SOURCE_DIR}"',cmake)

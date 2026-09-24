@@ -3,10 +3,12 @@
 #include "rkmoon/core.hpp"
 #include "rkmoon/hid_client.hpp"
 #include "src/globals.h"
+#include "src/input.h"
 #include "src/logging.h"
 #include "src/utility.h"
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include <mutex>
 #include <thread>
 #include <unistd.h>
@@ -19,19 +21,22 @@ std::string env(const char* key,const char* fallback=""){const char* v=getenv(ke
 bool yes(const char* key){return env(key)=="1";}
 void forward(rkmoon::HidEvent e){std::shared_ptr<rkmoon::HidClient> p;{std::lock_guard lock(input_mutex);p=input;}if(p)p->submit(e);}
 rkmoon::Config translate(const video::config_t& c){
+  if(c.rkmoon_absolute_mouse&&!yes("RKMOON_ALLOW_ABSOLUTE_MOUSE"))throw std::runtime_error("absolute mouse not authorized");
   rkmoon::Config out;
   if(c.videoFormat<0||c.videoFormat>1||c.dynamicRange!=0||c.chromaSamplingType!=0||c.enableIntraRefresh)throw std::runtime_error("RKMoon only supports SDR 8-bit 4:2:0 H264/HEVC, IDR recovery");
   if(c.bitrate<1000||c.bitrate>35000)throw std::runtime_error("RKMoon negotiated video bitrate must be 1..35 Mbps");
   out.width=uint32_t(c.width);out.height=uint32_t(c.height);
-  if(c.framerateX100<=0 && (c.framerate<59||c.framerate>60))throw std::runtime_error("invalid integer framerate");
+  if(c.framerateX100<=0 && (c.framerate<59||c.framerate>60) && !(c.framerate==90&&yes("RKMOON_ALLOW_1440P90_EXPERIMENT")))throw std::runtime_error("invalid integer framerate");
   out.fps_x100=uint32_t(c.framerateX100>0?c.framerateX100:c.framerate*100);
   out.bitrate=uint32_t(c.bitrate)*1000;out.codec=c.videoFormat==1?rkmoon::Codec::hevc:rkmoon::Codec::h264;
   if(!yes("RKMOON_ALLOW_HIGH_RES")&&(out.width!=1920||out.height!=1080))throw std::runtime_error("RKMoon first-stage mode is 1920x1080; higher modes require explicit acceptance gate");
+  out.allow_1440p90_experiment=yes("RKMOON_ALLOW_1440P90_EXPERIMENT")&&yes("RKMOON_ALLOW_HIGH_RES");
   out.validate();return out;
 }
 std::vector<std::string> args(const rkmoon::Config& c){
   std::vector<std::string> a{"--device",env("RKMOON_VIDEO_DEVICE","/dev/video0"),"--codec",c.codec==rkmoon::Codec::hevc?"hevc":"h264",
-    "--width",std::to_string(c.width),"--height",std::to_string(c.height),"--fps-x100",std::to_string(c.fps_x100),"--bitrate",std::to_string(c.bitrate),"--gop","60","--ack-capture-ownership"};
+    "--width",std::to_string(c.width),"--height",std::to_string(c.height),"--fps-x100",std::to_string(c.fps_x100),"--bitrate",std::to_string(c.bitrate),"--gop",std::to_string(c.fps_x100>=8900?90:60),"--ack-capture-ownership"};
+  if(c.allow_1440p90_experiment&&c.fps_x100>=8900) a.push_back("--allow-1440p90-experiment");
   if(yes("RKMOON_ALLOW_COPY")) a.push_back("--allow-copy");
   return a;
 }
@@ -63,11 +68,14 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
     if(!yes("RKMOON_CAPTURE_AUTHORIZED"))throw std::runtime_error("capture ownership has not been granted");
     auto c=translate(config);
     std::shared_ptr<rkmoon::HidClient> pending_input;
-    if(!env("RKMOON_HID_SOCKET").empty()) pending_input=std::make_shared<rkmoon::HidClient>(env("RKMOON_HID_SOCKET"));
+    if(!env("RKMOON_HID_SOCKET").empty()) pending_input=std::make_shared<rkmoon::HidClient>(env("RKMOON_HID_SOCKET"),config.rkmoon_absolute_mouse);
     rkmoon::Child worker(env("RKMOON_WORKER"),args(c));
     auto early_release=util::fail_guard([&]{release_input();pending_input.reset();});
     auto ready=rkmoon::receive(worker.fd(),3000ms);
     if(ready.h.kind!=rkmoon::Kind::ready||ready.h.width!=c.width||ready.h.height!=c.height||ready.h.codec!=c.codec||ready.h.extra!=c.fps_x100)throw std::runtime_error("capture negotiation failed");
+    // HDMI is the entire input viewport. No T6 desktop layout or logical scaling.
+    mail->event<::input::touch_port_t>(mail::touch_port)->raise(::input::touch_port_t{
+      {0,0,int(c.width),int(c.height),0,0},int(c.width),int(c.height),0,0,1,1,0,0});
     mail->event<video::hdr_info_t>(mail::hdr)->raise(std::make_unique<video::hdr_info_raw_t>(false));
     {std::lock_guard lock(input_mutex);input=std::move(pending_input);}
     auto idr=mail->event<bool>(mail::idr);
@@ -106,6 +114,10 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
 }
 void key(uint16_t vk,bool release,uint8_t flags){(void)flags;forward({rkmoon::HidEvent::key,int(vk),0,!release});}
 void relative(int x,int y){forward({rkmoon::HidEvent::move,x,y,false});}
+void absolute(const platf::touch_port_t& port,float x,float y){
+  if(port.width<=0||port.height<=0||!std::isfinite(x)||!std::isfinite(y))return;
+  forward({rkmoon::HidEvent::absolute,rkmoon::absolute_coordinate(x-port.offset_x,port.width),rkmoon::absolute_coordinate(y-port.offset_y,port.height),false});
+}
 void button(int number,bool release){forward({rkmoon::HidEvent::button,number,0,!release});}
 void scroll(int x,int y){forward({rkmoon::HidEvent::wheel,x,y,false});}
 } // namespace rkmoon_sunshine

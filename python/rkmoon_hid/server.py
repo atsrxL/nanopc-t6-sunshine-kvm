@@ -31,10 +31,19 @@ class Server:
             # Set before any await: a simultaneous connection can never acquire the same lease.
             self.busy=True;owns=True;self.active_writer=writer
             hello=await asyncio.wait_for(reader.readline(),self.timeout)
-            if len(hello)>512 or json.loads(hello)!={"op":"hello","version":1}:
+            if len(hello)>512:
                 raise InputError("invalid local lease handshake")
-            await self.backend.check()
-            lease=Lease(self.backend);queue=Queue(64);last=time.monotonic()
+            hello=json.loads(hello)
+            if not isinstance(hello,dict):raise InputError("invalid local lease handshake")
+            mode=hello.get("mouse_mode","relative")
+            expected={"op":"hello","version":1}
+            if "mouse_mode" in hello:expected["mouse_mode"]=mode
+            if hello!=expected or type(hello.get("version")) is not int or mode not in {"relative","absolute"}:
+                raise InputError("invalid local lease handshake")
+            # The prior owner has released all tracked state before busy can clear.
+            # Select before acknowledging: even the first button/wheel uses this output.
+            await asyncio.wait_for(self.backend.select_mouse(mode),1.5)
+            lease=Lease(self.backend,mode);queue=Queue(64);last=time.monotonic()
             await self.reply(writer,True)
             async def read_events():
                 nonlocal last

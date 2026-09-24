@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # RKMoon minimal KVM client application.
 #
-# Reused unmodified from the pinned moonlight-qt checkout: GameStream pairing/HTTP,
-# the streaming Session, FFmpeg hardware decoding and renderers, Opus audio playback,
+# Reused unmodified from the pinned moonlight-qt checkout: GameStream HTTP, the
+# streaming Session, FFmpeg hardware decoding and renderers, Opus audio playback,
 # and keyboard/mouse input.
 #
 # Not built at all: QML/Qt Quick UI, game library and app management, box art, mDNS
 # discovery, multi-host ComputerManager, Discord rich presence, auto update checks,
-# gamepad/joystick/haptics, CLI subcommands.
+# gamepad/joystick/haptics, CLI subcommands, NvPairingManager and IdentityManager (this
+# server authenticates with a password over plaintext HTTP instead of GameStream PIN
+# pairing, has no TLS listener and never requests a client certificate, so no client
+# identity key or certificate is generated or stored).
 QT += core gui widgets network xml
 CONFIG += c++17
 TARGET = rkmoon-client
@@ -91,12 +94,10 @@ unix:!macx {
 # Upstream sources reused as-is (plus the audited overlay patches applied by
 # client/tools/apply_moonlight.py).
 SOURCES += \
-    $$ML/backend/identitymanager.cpp \
     $$ML/backend/nvaddress.cpp \
     $$ML/backend/nvapp.cpp \
     $$ML/backend/nvcomputer.cpp \
     $$ML/backend/nvhttp.cpp \
-    $$ML/backend/nvpairingmanager.cpp \
     $$ML/path.cpp \
     $$ML/settings/streamingpreferences.cpp \
     $$ML/streaming/audio/audio.cpp \
@@ -112,12 +113,10 @@ SOURCES += \
     $$ML/wm.cpp
 
 HEADERS += \
-    $$ML/backend/identitymanager.h \
     $$ML/backend/nvaddress.h \
     $$ML/backend/nvapp.h \
     $$ML/backend/nvcomputer.h \
     $$ML/backend/nvhttp.h \
-    $$ML/backend/nvpairingmanager.h \
     $$ML/path.h \
     $$ML/settings/streamingpreferences.h \
     $$ML/streaming/audio/renderers/renderer.h \
@@ -131,13 +130,14 @@ HEADERS += \
 
 # RKMoon minimal client front end.
 SOURCES += \
-    src/kvmconfig.cpp \
-    src/kvmhost.cpp \
-    src/kvmwindow.cpp \
-    src/nocompat.cpp \
-    src/nogamepad.cpp \
-    src/rkmoon_audio_control.cpp \
-    src/rkmoon_audio_keys.cpp
+    $$PWD/src/kvmconfig.cpp \
+    $$PWD/src/kvmhost.cpp \
+    $$PWD/src/kvmwindow.cpp \
+    $$PWD/src/nocompat.cpp \
+    $$PWD/src/nogamepad.cpp \
+    $$PWD/src/rkmoon_audio_control.cpp \
+    $$PWD/src/rkmoon_audio_keys.cpp \
+    $$PWD/src/rkmoon_auth.cpp
 
 rkmoon_tests {
     QT += testlib
@@ -145,16 +145,20 @@ rkmoon_tests {
     CONFIG += console
     SOURCES += ../tests/client_ui.cpp
 } else {
-    SOURCES += src/main.cpp
+    SOURCES += $$PWD/src/rkmoon_main.cpp
 }
 
 HEADERS += \
-    src/kvmconfig.h \
-    src/kvmhost.h \
-    src/kvmwindow.h \
-    src/rkmoon_audio_control.h \
-    src/rkmoon_audio_keys.h \
-    src/rkmoon_http_log.h
+    $$PWD/src/kvmconfig.h \
+    $$PWD/src/kvmhost.h \
+    $$PWD/src/rkmoon_pointer.h \
+    $$PWD/src/rkmoon_display.h \
+    $$PWD/src/rkmoon_session_control.h \
+    $$PWD/src/kvmwindow.h \
+    $$PWD/src/rkmoon_audio_control.h \
+    $$PWD/src/rkmoon_audio_keys.h \
+    $$PWD/src/rkmoon_auth.h \
+    $$PWD/src/rkmoon_http_log.h
 
 RESOURCES += rkmoon.qrc
 

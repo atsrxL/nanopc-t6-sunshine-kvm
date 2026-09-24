@@ -2,6 +2,7 @@
 #pragma once
 #include "kvmhost.h"
 #include <QWidget>
+#include <QTimer>
 
 class QLineEdit;
 class QPushButton;
@@ -13,23 +14,40 @@ class QCheckBox;
 class KvmWindow : public QWidget
 {
     Q_OBJECT
-    friend class ClientUiTest; // Offline lifecycle tests; never contacts a host.
+    friend class ClientUiTest; // Offline lifecycle tests; these never contact a host.
 public:
     KvmWindow();
+    ~KvmWindow() override;
 protected:
     void closeEvent(QCloseEvent* event) override;
 private:
     void connectHost();
     void startStream();
     void settings();
+    void pollDisplay();
+    void runStream();
+    void stopFollowing();
+    void updateMouseModeEnabled();
     void updateStatus(const QString& status);
 
     KvmConfig m_config;
     KvmHost m_host;
     QLineEdit* m_address;
+    QSpinBox* m_port;
+    QLineEdit* m_password;
+    QComboBox* m_mouseMode;
     QPushButton* m_connect;
     QPushButton* m_start;
     QLabel* m_status;
+    QTimer m_poll;
+    bool m_wantStream = false;
+    bool m_restart = false;
+    bool m_cleanup = false;
+    int m_disconnectChecks = 0;
+    int m_pollFailures = 0;
+    QString m_sessionError;
+    bool m_pollBusy = false;
+    RkmoonDisplay m_runningMode;
     bool m_streaming = false;
     bool m_connecting = false;
 };

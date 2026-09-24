@@ -49,7 +49,10 @@ def main():
         gid=grp.getgrnam('rkmoon-input').gr_gid
         # Resolve actual HID minors: an unbound old gadget may still own hidg0/1.
         devices=[]
-        for function in ['hid.usb0','hid.usb1']:
+        functions=['hid.usb0','hid.usb1']
+        if cfg['kvmd']['hid'].get('mouse_alt',{}).get('device'):
+            functions.append('hid.usb2')
+        for function in functions:
             major,minor=map(int,(target/'functions'/function/'dev').read_text().split(':'))
             node=Path('/dev')/f'hidg{minor}'
             for _ in range(30):
@@ -59,6 +62,8 @@ def main():
             os.chown(node,0,gid);node.chmod(0o660);devices.append(str(node))
         cfg['kvmd']['hid']['keyboard']['device']=devices[0]
         cfg['kvmd']['hid']['mouse']['device']=devices[1]
+        if len(devices)==3:
+            cfg['kvmd']['hid']['mouse_alt']['device']=devices[2]
         a.config.write_text(json.dumps(cfg,indent=2)+'\n')
     else:
         if not target.exists():return

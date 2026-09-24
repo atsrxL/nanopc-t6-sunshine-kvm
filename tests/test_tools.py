@@ -28,6 +28,30 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'config';c=self.config();c['capture_ownership_authorized']='false';p.write_text(json.dumps(c))
             with self.assertRaises(run.Refused):run.load(p)
+    def test_1440p90_gate_defaults_and_environment(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'config';c=self.config();c.pop('allow_1440p90_experiment',None)
+            p.write_text(json.dumps(c));loaded=run.load(p)
+            self.assertIs(loaded['allow_1440p90_experiment'],False)
+            with mock.patch.dict(os.environ,{'RKMOON_ALLOW_1440P90_EXPERIMENT':'1'}):
+                self.assertEqual(run.base_env(loaded,Path(d))['RKMOON_ALLOW_1440P90_EXPERIMENT'],'0')
+            c['allow_1440p90_experiment']='true';p.write_text(json.dumps(c))
+            with self.assertRaises(run.Refused):run.load(p)
+            c['allow_1440p90_experiment']=True;p.write_text(json.dumps(c))
+            self.assertEqual(run.base_env(run.load(p),Path(d))['RKMOON_ALLOW_1440P90_EXPERIMENT'],'1')
+    def test_absolute_mouse_gate_defaults_and_environment(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'config';c=self.config();p.write_text(json.dumps(c))
+            loaded=run.load(p)
+            self.assertIs(loaded['allow_absolute_mouse'],False)
+            with mock.patch.dict(os.environ,{'RKMOON_ALLOW_ABSOLUTE_MOUSE':'1'}):
+                self.assertEqual(run.base_env(loaded,Path(d))['RKMOON_ALLOW_ABSOLUTE_MOUSE'],'0')
+            c['allow_absolute_mouse']='true';p.write_text(json.dumps(c))
+            with self.assertRaises(run.Refused):run.load(p)
+            c['allow_absolute_mouse']=True;p.write_text(json.dumps(c))
+            self.assertEqual(run.base_env(run.load(p),Path(d))['RKMOON_ALLOW_ABSOLUTE_MOUSE'],'0')
+            c['input']['enabled']=True;p.write_text(json.dumps(c))
+            self.assertEqual(run.base_env(run.load(p),Path(d))['RKMOON_ALLOW_ABSOLUTE_MOUSE'],'1')
     def test_audio_requires_explicit_hardware_capture(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'config';c=self.config()

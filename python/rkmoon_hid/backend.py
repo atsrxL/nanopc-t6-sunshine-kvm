@@ -24,7 +24,8 @@ def read_private_json(path):
 class Kvmd:
     """Small bounded async HTTP/1.1 client over a PRIVATE Unix socket, never public HTTP.
 
-    No /set_params, /reset, /set_connected, UDC or configfs operations are issued.
+    Only existing mouse outputs may be selected, before lease admission.
+    No /reset, /set_connected, UDC or configfs operations are issued.
     A POST acknowledgement means kvmd accepted an event, NOT that USB host observed it.
     """
     def __init__(self, socket_path, headers=None, timeout=0.4):
@@ -94,10 +95,32 @@ class Kvmd:
         keyboard, mouse = state.get("keyboard", {}), state.get("mouse", {})
         if state.get("enabled") is not True or keyboard.get("online") is not True or mouse.get("online") is not True:
             raise BackendError("USB HID is not reported online")
-        # Single relative OTG device legitimately reports outputs.active == "". The authoritative field is absolute.
-        if mouse.get("absolute") is not False:
-            raise BackendError("relative USB mouse not active; no automatic gadget/mode change is permitted")
+        if type(mouse.get("absolute")) is not bool:
+            raise BackendError("USB mouse mode is unknown")
         return state
+
+    async def select_mouse(self, mode):
+        if mode not in {"relative", "absolute"}:
+            raise BackendError("unsupported mouse mode")
+        absolute = mode == "absolute"
+        target = "usb" if absolute else "usb_rel"
+        state = await self.check()
+        mouse = state["mouse"]
+        outputs = mouse.get("outputs", {})
+        # A single preconfigured mouse has no selectable output. Never create one.
+        if mouse["absolute"] == absolute and outputs.get("active", "") in {"", target}:
+            return
+        if target not in outputs.get("available", []):
+            raise BackendError("requested USB mouse output is unavailable")
+        await self.request("POST", "/hid/set_params", mouse_output=target)
+        # kvmd's HTTP acknowledgement alone is insufficient. Read back boundedly.
+        for _ in range(5):
+            state = await self.check()
+            mouse = state["mouse"]
+            if mouse["absolute"] == absolute and mouse.get("outputs", {}).get("active") == target:
+                return
+            await asyncio.sleep(0.02)
+        raise BackendError("USB mouse output selection was not confirmed")
 
     async def key(self, key, down):
         await self.request("POST", "/hid/events/send_key", key=key, state="true" if down else "false", finish="false")
@@ -105,6 +128,8 @@ class Kvmd:
         await self.request("POST", "/hid/events/send_mouse_button", button=button, state="true" if down else "false")
     async def move(self, x, y):
         await self.request("POST", "/hid/events/send_mouse_relative", delta_x=x, delta_y=y)
+    async def absolute(self, x, y):
+        await self.request("POST", "/hid/events/send_mouse_move", to_x=x, to_y=y)
     async def wheel(self, x, y):
         await self.request("POST", "/hid/events/send_mouse_wheel", delta_x=x, delta_y=y)
     async def neutralize(self):

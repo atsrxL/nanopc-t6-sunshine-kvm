@@ -29,3 +29,14 @@ class NativeHidTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_client_abrupt_exit_releases(self):
         await self.run_child('abrupt')
         self.assertEqual(self.b.events,[('key','KeyA',True),('key','KeyA',False)])
+    async def test_absolute_coordinates_button_order_and_release(self):
+        await self.run_child('absolute')
+        self.assertEqual(self.b.modes,['absolute'])
+        first=self.b.events.index(('absolute',-32768,32767))
+        button=self.b.events.index(('button','left',True))
+        last=self.b.events.index(('absolute',32767,-32768))
+        self.assertLess(first,button);self.assertLess(button,last)
+        self.assertIn(('button','left',False),self.b.events)
+    async def test_wrong_mode_revokes_and_releases_without_motion(self):
+        await self.run_child('wrong-mode')
+        self.assertEqual(self.b.events,[('key','KeyA',True),('key','KeyA',False)])

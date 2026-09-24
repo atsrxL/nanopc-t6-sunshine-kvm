@@ -12,9 +12,12 @@ from rkmoon_hid.lease import Lease, Queue, InputError, chunks, parse_event
 from rkmoon_hid.server import Server
 
 class Fake:
-    def __init__(self): self.events=[]; self.fail_down=False; self.fail_release=False; self.absolute=False
+    def __init__(self): self.events=[]; self.fail_down=False; self.fail_release=False; self.is_absolute=False; self.fail_select=False; self.modes=[]
     async def check(self):
-        if self.absolute: raise BackendError('relative required')
+        pass
+    async def select_mouse(self,mode):
+        if self.fail_select:raise BackendError('selection failed')
+        self.modes.append(mode);self.is_absolute=mode=='absolute'
     async def key(self,key,down):
         self.events.append(('key',key,down))
         if (down and self.fail_down) or (not down and self.fail_release): raise BackendError('fixture timeout')
@@ -22,6 +25,7 @@ class Fake:
         self.events.append(('button',key,down))
         if not down and self.fail_release: raise BackendError('fixture release failure')
     async def move(self,x,y): self.events.append(('move',x,y))
+    async def absolute(self,x,y): self.events.append(('absolute',x,y))
     async def wheel(self,x,y): self.events.append(('wheel',x,y))
 
 class ProtocolTests(unittest.TestCase):
@@ -45,8 +49,10 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaises(InputError): parse_event({'op':'key','vk':65})
     def test_numeric_state(self):
         with self.assertRaises(InputError): parse_event({'op':'key','vk':65,'down':1})
-    def test_no_absolute(self):
-        with self.assertRaises(InputError): parse_event({'op':'absolute','x':0,'y':0})
+    def test_absolute_range(self):
+        parse_event({'op':'absolute','x':-32768,'y':32767})
+        for value in [-32769,32768,True,0.5]:
+            with self.assertRaises(InputError):parse_event({'op':'absolute','x':value,'y':0})
     def test_move_range(self):
         with self.assertRaises(InputError): parse_event({'op':'move','x':32768,'y':0})
     def test_buttons(self):
@@ -110,6 +116,32 @@ class LeaseTests(unittest.IsolatedAsyncioTestCase):
     async def test_queue_edge(self):
         q=Queue(3);q.put({'op':'move','x':2,'y':3});q.put({'op':'key','vk':65,'down':True});q.put({'op':'move','x':4,'y':5})
         self.assertEqual(len(q.items),3)
+    async def test_absolute_latest_and_button_order(self):
+        q=Queue(3)
+        q.put({'op':'absolute','x':-32768,'y':0})
+        q.put({'op':'absolute','x':5,'y':6})
+        q.put({'op':'button','button':1,'down':True})
+        q.put({'op':'absolute','x':32767,'y':32767})
+        self.assertEqual((await q.pop())['x'],5)
+        self.assertEqual((await q.pop())['op'],'button')
+        self.assertEqual((await q.pop())['x'],32767)
+    async def test_absolute_full_queue_updates_only_adjacent_position(self):
+        q=Queue(1);q.put({'op':'absolute','x':0,'y':0})
+        q.put({'op':'absolute','x':32767,'y':-32768})
+        self.assertEqual(q.highwater,1)
+        with self.assertRaises(InputError):q.put({'op':'button','button':1,'down':False})
+        self.assertEqual(await q.pop(),{'op':'absolute','x':32767,'y':-32768})
+    async def test_absolute_button_failure_retains_release_guard(self):
+        lease=Lease(self.b,'absolute')
+        await lease.apply({'op':'button','button':1,'down':True})
+        self.b.fail_release=True;self.assertFalse(await lease.release())
+        self.b.fail_release=False;self.assertTrue(await lease.release())
+    async def test_absolute_lease_and_mismatch(self):
+        lease=Lease(self.b,'absolute')
+        await lease.apply({'op':'absolute','x':-32768,'y':32767})
+        self.assertEqual(self.b.events,[('absolute',-32768,32767)])
+        with self.assertRaises(InputError):await lease.apply({'op':'move','x':1,'y':1})
+        with self.assertRaises(InputError):await self.l.apply({'op':'absolute','x':0,'y':0})
     async def test_queue_overflow(self):
         q=Queue(1);q.put({'op':'key','vk':65,'down':True})
         with self.assertRaises(InputError): q.put({'op':'key','vk':65,'down':False})
@@ -133,9 +165,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             try: await w.wait_closed()
             except OSError: pass
         await self.s.close();self.tmp.cleanup()
-    async def client(self):
+    async def client(self,mode=None):
         r,w=await asyncio.open_unix_connection(self.path);self.clients.append(w)
-        w.write(b'{"op":"hello","version":1}\n');await w.drain()
+        hello={'op':'hello','version':1}
+        if mode is not None:hello['mouse_mode']=mode
+        w.write((json.dumps(hello)+'\n').encode());await w.drain()
         return r,w,await r.readline()
     async def press(self,w):
         w.write(b'{"op":"key","vk":65,"down":true}\n');await w.drain()
@@ -166,8 +200,25 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         await until(lambda:self.s.recovery is not None);self.assertTrue(self.s.busy)
         _,_,reply=await self.client();self.assertEqual(reply,b'{"ok":false}\n')
         self.b.fail_release=False;await until(lambda:not self.s.busy)
-    async def test_absolute_rejected(self):
-        self.b.absolute=True;r,w,reply=await self.client();self.assertNotEqual(reply,b'{"ok":true}\n')
+    async def test_selection_failure_rejected(self):
+        self.b.fail_select=True;r,w,reply=await self.client('absolute');self.assertNotEqual(reply,b'{"ok":true}\n')
+    async def test_absolute_first_button_and_wheel(self):
+        _,w,reply=await self.client('absolute');self.assertEqual(reply,b'{"ok":true}\n')
+        self.assertEqual(self.b.modes,['absolute'])
+        w.write(b'{"op":"button","button":1,"down":true}\n{"op":"wheel","x":0,"y":120}\n');await w.drain()
+        await until(lambda:('wheel',0,1) in self.b.events)
+        self.assertTrue(self.b.is_absolute)
+    async def test_mode_change_waits_for_release_guard(self):
+        _,w,_=await self.client('absolute')
+        await self.press(w);self.b.fail_release=True;w.close();await w.wait_closed()
+        await until(lambda:self.s.recovery is not None)
+        _,_,reply=await self.client('relative');self.assertEqual(reply,b'{"ok":false}\n')
+        self.assertEqual(self.b.modes,['absolute'])
+        self.b.fail_release=False;await until(lambda:not self.s.busy)
+        _,_,reply=await self.client('relative');self.assertEqual(reply,b'{"ok":true}\n')
+        self.assertEqual(self.b.modes,['absolute','relative'])
+    async def test_unknown_mode_rejected(self):
+        _,_,reply=await self.client('desktop');self.assertNotEqual(reply,b'{"ok":true}\n')
     async def test_oversize_releases(self):
         r,w,_=await self.client();await self.press(w);w.write(b'x'*1500+b'\n');await w.drain()
         await until(lambda:not self.s.busy);self.assertIn(('key','KeyA',False),self.b.events)
@@ -194,7 +245,8 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
     async def test_state(self): await self.k.check()
     async def test_absolute_state(self):
         self.response['result']['mouse']['absolute']=True
-        with self.assertRaises(BackendError): await self.k.check()
+        await self.k.check();await self.k.select_mouse('absolute')
+        with self.assertRaises(BackendError):await self.k.select_mouse('relative')
     async def test_offline_state(self):
         self.response['result']['keyboard']['online']=False
         with self.assertRaises(BackendError): await self.k.check()
@@ -217,5 +269,52 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b'POST /hid/events/send_mouse_relative?',self.calls[1])
         self.assertIn(b'POST /hid/events/send_mouse_wheel?',self.calls[2])
         self.assertTrue(all(b'set_params' not in c and b'/reset' not in c for c in self.calls))
+    async def test_absolute_event_path(self):
+        await self.k.absolute(-32768,32767)
+        self.assertIn(b'/hid/events/send_mouse_move?to_x=-32768&to_y=32767',self.calls[0])
+
+class SelectionTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.k=Kvmd('/not-opened');self.calls=[];self.confirm=True;self.reject=False
+        self.state={'enabled':True,'keyboard':{'online':True},'mouse':{
+            'online':True,'absolute':False,'outputs':{'available':['usb','usb_rel'],'active':'usb_rel'}}}
+        async def request(method,path,**params):
+            self.calls.append((method,path,params))
+            if path=='/hid/set_params':
+                if self.reject:raise BackendError('selection timeout')
+                if self.confirm:
+                    target=params['mouse_output'];self.state['mouse']['absolute']=target=='usb'
+                    self.state['mouse']['outputs']['active']=target
+                return {}
+            return self.state
+        self.k.request=request
+    async def test_select_readback_and_no_keyboard_change(self):
+        await self.k.select_mouse('absolute')
+        self.assertEqual(self.calls,[('GET','/hid',{}),('POST','/hid/set_params',{'mouse_output':'usb'}),('GET','/hid',{})])
+        await self.k.select_mouse('relative')
+        self.assertEqual(self.calls[-2],('POST','/hid/set_params',{'mouse_output':'usb_rel'}))
+    async def test_unconfirmed_selection_fails(self):
+        self.confirm=False
+        with self.assertRaises(BackendError):await self.k.select_mouse('absolute')
+        self.assertEqual(sum(c[0]=='POST' for c in self.calls),1)
+    async def test_timeout_selection_fails(self):
+        self.reject=True
+        with self.assertRaises(BackendError):await self.k.select_mouse('absolute')
+    async def test_missing_output_no_write(self):
+        self.state['mouse']['outputs']['available']=['usb_rel']
+        with self.assertRaises(BackendError):await self.k.select_mouse('absolute')
+        self.assertTrue(all(c[0]=='GET' for c in self.calls))
+    async def test_offline_no_write(self):
+        self.state['mouse']['online']=False
+        with self.assertRaises(BackendError):await self.k.select_mouse('absolute')
+        self.assertTrue(all(c[0]=='GET' for c in self.calls))
+    async def test_single_relative_no_write(self):
+        self.state['mouse']['outputs']={'available':[],'active':''}
+        await self.k.select_mouse('relative')
+        self.assertEqual(self.calls,[('GET','/hid',{})])
+    async def test_no_midlease_mode_guess(self):
+        lease=Lease(self.k,'absolute')
+        with self.assertRaises(InputError):await lease.apply({'op':'move','x':1,'y':2})
+        self.assertEqual(self.calls,[])
 
 if __name__=='__main__': unittest.main()

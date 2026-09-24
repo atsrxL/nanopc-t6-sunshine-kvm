@@ -1,10 +1,50 @@
 # 验收矩阵
 
+## 当前自动画面模式任务
+
+2026-09-24 用户新增要求：Ctrl+Alt+Shift+C 显示本地指针；客户端自动跟随 HDMI 尺寸/帧率，设置仅有码率和编码。实现与本轮构建/部署证据单列于 [自动跟随记录](../results/20260924-1440p90/DISPLAY-FOLLOW.md)，不能把下方旧手动预设验收当作新功能验收。
+
+## 1440p90当前阶段
+
+| 项目 | 状态 | 证据/限定 |
+|---|---|---|
+| 实验server/worker完整构建与离线回归 | 通过 | Linux ARM64容器完整链接；30原生通过，93 Python/联合中91通过2跳过，配置gate15项通过；见[构建记录](../results/20260924-1440p90/SERVER-BUILD.md)，非实机编码 |
+| NVIDIA输出与T6锁定 | 通过 | 两次2560×1440、89.9935Hz，临时EDID/NVAPI，见NVIDIA专项记录 |
+| 完整V4L2缓冲采集30s | 通过 | 2695帧、timestamp89.9981fps、每帧11059200字节、无缺帧/错误；无编码，见[采集记录](../results/20260924-1440p90/CAPTURE.md) |
+| 真实HEVC/H264 90fps编码与独立解码 | 通过 | 各60s/5394帧，89.998/89.982fps；DMA-BUF，HEVC0skip/H2641skip；仅当前较静态源，见[编码记录](../results/20260924-1440p90/ENCODE.md) |
+| 客户端1440p90预设/请求参数 | 通过 | Mac arm64 Qt12/12、Python3/3；实验模式，默认仍1080p60 |
+| 新Windows90Hz手动预设包 | 通过 | bac1b3e776b1，Qt Windows12/12，Target读回SHA256 06381939e037dc79b13060f706959ee243b5e639e43d809ec26f3977fe9ef07e；不含本轮自动跟随功能 |
+| 真实90fps客户端视频/音频/USB | 未测试 | 不从采集结果推导端到端性能 |
+
+以下时间顺序记录保留历史状态；以上矩阵为本阶段最新验收。
+
+> 1440p90后续突破：NVIDIA NVAPI自定义输出成功，两次T6时序探测均为2560×1440、89.9935Hz，接收锁定通过。下条BADMODE为历史失败。持续采集、MPP编码及客户端90fps仍未测试；见 [NVAPI实测](../results/20260924-1440p90/NVIDIA.md)。
+
+> 1440p90专项：EDID试验未能使Znas直通RTX5060Ti接受90Hz，Windows模式测试BADMODE(-2)。原EDID已恢复、实际1080p59.9952输入正常；90Hz接收/采集/编码/客户端均未测试通过，代码仍保留60Hz限制。见 [证据](../results/20260924-1440p90/STATUS.md)。
+
+> 最新要求：HTTP＋密码，取消HTTPS/证书验证；默认密码 `kvm`，Windows为主要客户端。此条取代下文旧TLS/TOFU要求，见 [ADR-005](ADR-005-http-password.md)。
+
+> 2026-09-24：按用户要求改为 IP＋密码（初版 `kvm`），取消 PIN/pair 和客户端证书登记授权。TLS/输入加密保留；旧配对说明及旧实机通过记录不代表新认证验收。见 [认证决策](ADR-004-password-auth.md)。新版本尚未部署到设备。
+
 > 实机更新：ARM64 worker/Sunshine 已构建；T6 真实 1080p60 HEVC/H264 各 60 秒及独立解码通过；原版 Moonlight HEVC 硬解超过 11 分钟、H264 重连通过。USB 尚未完成。见 [T6 验收记录](../results/20260923-t6/STATUS.md)。
 
 > 2026-09-23 本地更新：完整 Sunshine 与真实 MPP worker 已在 Linux amd64 编译链接通过；25 原生、69 Python/联合、25 sanitizer 测试通过。目标 ARM64/P1/P2/P3 仍未测试。最新结果见 [构建记录](../results/20260923-build/STATUS.md)。下文原交接记录保留供追溯。
 
 状态必须为：通过 / 失败 / 未测试 / 部分完成。每次结果绑定具体硬件、commit、二进制/动态库、客户端和证据目录。原记录不是新验收。
+
+## 当前HTTP基础密码版本
+
+服务端完整构建、28原生、91/93工具测试（2跳过）、生产binary HTTP认证、无HTTPS监听/证书生成及重启身份回归通过。Windows客户端构建由子代理执行，最终交付另记；未部署T6。见 [HTTP版本证据](../results/20260924-http-password/STATUS.md)。
+
+## 2026-09-24 密码认证版本
+
+| 检查 | 状态 | 证据 / 限定 |
+|---|---|---|
+| P0 ARM64 Linux完整构建 | 通过 | [记录与hash](../results/20260924-password/STATUS.md)，隔离容器，非 T6 原生 |
+| 密码认证及无pair网络回归 | 通过 | 生产binary + 合成probe worker，真实HTTP/HTTPS；正确/错误/缺失密码、pair关闭、重启身份稳定，无媒体流 |
+| 原生/联合/脱敏回归 | 通过 | 28原生；93工具/联合中91通过2内核fixture跳过；14 overlay、5脱敏；生产密码guard C++测试 |
+| 新客户端本地构建/认证 | 通过 | macOS ARM64链接、3源码组、10/10 Qt含loopback TLS；详见 [客户端验收](../client/docs/ACCEPTANCE.md) |
+| 新客户端＋真实 HDMI/音频/USB | 未测试 | 本次未访问设备，旧实机通过记录不迁移 |
 
 ## 最小服务端独立分支（`feat/minimal-kvm-server`，不覆盖已实测 main）
 

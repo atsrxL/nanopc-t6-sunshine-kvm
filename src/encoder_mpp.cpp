@@ -82,15 +82,11 @@ void Encoder::open(const Config& c,const Layout& l,const std::vector<Capture::Bu
   p->u("split:mode",0); // No slice-fragment output policy. EOI handling remains defensive.
   if(c.codec==Codec::hevc){
     p->s("h265:profile",1);p->s("h265:tier",0);
-    // Main tier: Level 4.1 for 1080p60 (<=20 Mbps); Level 5/5.1 for higher rate/resolution.
-    int level=(uint64_t(c.width)*c.height>3686400||c.bitrate>25000000)?153:
-               (uint64_t(c.width)*c.height>2228224||c.bitrate>20000000)?150:123;
-    p->s("h265:level",level);
+    p->s("h265:level",mpp_video_level(c));
   } else {
     // Baseline, no CABAC/B slices, robust compatibility fallback.
     p->s("h264:profile",66);p->s("h264:cabac_en",0);p->s("h264:stream_type",0);p->u("h264:vui_en",1);
-    auto mbps=uint64_t((c.width+15)/16)*((c.height+15)/16)*60;
-    p->s("h264:level",mbps>983040?52:mbps>522240?51:42);
+    p->s("h264:level",mpp_video_level(c));
   }
   ok(p->api->control(p->ctx,MPP_ENC_SET_CFG,p->cfg),"set_cfg");
   MppEncHeaderMode mode=MPP_ENC_HEADER_MODE_EACH_IDR;

@@ -19,8 +19,9 @@ int main(int argc,char** argv){
   bool probe=false,allow_copy=false,authorized=false;
   try {
     for(int i=1;i<argc;++i){std::string k=argv[i];
-      if(k=="--help"){std::cout<<"rkmoon-worker --device /dev/videoN --codec hevc|h264 --width 1920 --height 1080 --fps-x100 6000 --bitrate 20000000 --gop 60 --seconds 60 --output NEW_FILE --stats NEW_CSV --ack-capture-ownership [--allow-copy]\nHardware-only capability probe: --probe (no HDMI capture; emits synthetic black into MPP)\nInternal: --ipc-fd FD; one AU per ACK, K/bitrate/stop control messages\n";return 0;}
+      if(k=="--help"){std::cout<<"rkmoon-worker --device /dev/videoN --codec hevc|h264 --width 1920 --height 1080 --fps-x100 6000 --bitrate 20000000 --gop 60 --seconds 60 --output NEW_FILE --stats NEW_CSV --ack-capture-ownership [--allow-copy]\n1440p90 experiment only: --width 2560 --height 1440 --fps-x100 9000 --allow-1440p90-experiment\nHardware-only capability probe: --probe (no HDMI capture; emits synthetic black into MPP)\nInternal: --ipc-fd FD; one AU per ACK, K/bitrate/stop control messages\n";return 0;}
       if(k=="--probe"){probe=true;continue;}if(k=="--allow-copy"){allow_copy=true;continue;}if(k=="--ack-capture-ownership"){authorized=true;continue;}
+      if(k=="--allow-1440p90-experiment"){c.allow_1440p90_experiment=true;continue;}
       if(++i>=argc)throw std::runtime_error("missing option value");
       std::string v=argv[i];
       if(k=="--device")device=v;else if(k=="--output")output=v;else if(k=="--stats")stats=v;

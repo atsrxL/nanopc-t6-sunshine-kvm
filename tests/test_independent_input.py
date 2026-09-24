@@ -11,6 +11,8 @@ class IndependentInput(unittest.TestCase):
         self.assertTrue(d['kvmd']['auth']['enabled'])
         self.assertEqual(d['kvmd']['auth']['usc']['users'],['tester'])
         self.assertFalse(d['kvmd']['hid']['mouse']['absolute'])
+        self.assertEqual(d['kvmd']['hid']['mouse_alt']['device'],'/dev/hidg2')
+        self.assertTrue(d['otg']['devices']['hid']['mouse_alt']['start'])
         self.assertFalse(d['kvmd']['hid']['jiggler']['enabled'])
         self.assertNotIn('vnc',d)
         self.assertFalse(d['otg']['devices']['msd']['start'])
