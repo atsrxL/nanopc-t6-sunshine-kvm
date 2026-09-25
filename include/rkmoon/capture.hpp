@@ -3,6 +3,8 @@
 #include "core.hpp"
 #include <linux/videodev2.h>
 namespace rkmoon {
+// The HDMI receiver reports no locked source. Distinct from a changed or unsupported mode.
+struct NoSignal : std::runtime_error { using std::runtime_error::runtime_error; };
 class Capture {
 public:
   struct Buffer { void* data=nullptr; size_t size=0; Fd dma; bool dequeued=false; };

@@ -15,6 +15,7 @@
 #include <QDialog>
 #include <QFile>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMetaObject>
 #include <QNetworkRequest>
 #include <QPushButton>
@@ -532,13 +533,14 @@ private slots:
         }
         SDL_QuitSubSystem(SDL_INIT_EVENTS);
     }
-    void noSignalPollWaitsAndCloseIsGuarded()
+    void unsupportedSourcePollWaitsAndCloseIsGuarded()
     {
         LoopbackServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         server.handler = [](const QByteArray&, const QByteArray&) {
             auto body = serverInfoXml(true);
-            body.replace("<RKMoonDisplayStatus>ready", "<RKMoonDisplayStatus>no_signal");
+            // no_signal now starts a placeholder session (ADR-011); an unsupported mode still waits.
+            body.replace("<RKMoonDisplayStatus>ready", "<RKMoonDisplayStatus>unsupported");
             return body;
         };
         KvmWindow window;
@@ -776,6 +778,48 @@ private slots:
                  qPrintable(failure));
         QVERIFY(!RkmoonAuth::hasTarget());
 
+        RkmoonAuth::clear();
+    }
+
+    void connectShowsInfoWithoutStreamingAndStartAcceptsNoSignal()
+    {
+        LoopbackServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        bool signal = true;
+        server.handler = [&](const QByteArray& path, const QByteArray&) {
+            if (path.startsWith("/applist")) return appListXml();
+            auto body = serverInfoXml(true);
+            if (!signal) body.replace("<RKMoonDisplayStatus>ready", "<RKMoonDisplayStatus>no_signal");
+            return body;
+        };
+        KvmWindow window;
+        window.m_config.hostUuid.clear();
+        window.m_address->setText("127.0.0.1");
+        window.m_port->setValue(server.serverPort());
+        window.connectHost();
+        QTRY_VERIFY(!window.m_connecting);
+        QVERIFY(window.m_connected);
+        QVERIFY(!window.m_wantStream);            // Connect never opens the stream.
+        QVERIFY(window.m_poll.isActive());        // Info keeps updating.
+        QCOMPARE(window.m_start->text(), QString("Start"));
+        QVERIFY(window.m_start->isEnabled());
+        QVERIFY(window.m_info->text().contains("rkmoon-loopback"));
+        QVERIFY(window.m_info->text().contains("2560"));
+        QVERIFY(window.m_info->text().contains("HEVC"));
+        signal = false;
+        window.pollDisplay(); QTRY_VERIFY(!window.m_pollBusy);
+        QVERIFY(!window.m_wantStream);
+        QVERIFY(window.m_info->text().contains("no signal"));
+        QVERIFY(window.m_start->isEnabled());
+        // Start is accepted without a signal; Cancel returns to the idle info view.
+        window.startStream();
+        QVERIFY(window.m_wantStream);
+        QCOMPARE(window.m_start->text(), QString("Cancel"));
+        window.startStream();
+        QVERIFY(!window.m_wantStream);
+        QVERIFY(window.m_poll.isActive());
+        QCOMPARE(window.m_start->text(), QString("Start"));
+        window.m_poll.stop();
         RkmoonAuth::clear();
     }
 

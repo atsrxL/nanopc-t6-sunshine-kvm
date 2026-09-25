@@ -17,6 +17,14 @@ namespace rkmoon {
 namespace {
 int ctl(int fd,unsigned long op,void* p) {int r;do {r=ioctl(fd,op,p);}while(r<0&&errno==EINTR);return r;}
 void check(int r,const char* msg) {if(r<0)throw std::runtime_error(std::string(msg)+": "+std::strerror(errno));}
+// Same errno set the server advertises as RKMoonDisplayStatus=no_signal.
+void query_timings(int fd,v4l2_dv_timings& t,const char* msg) {
+  if(ctl(fd,VIDIOC_QUERY_DV_TIMINGS,&t)<0) {
+    if(errno==ENOLINK||errno==ENOLCK||errno==ENODATA) throw NoSignal(std::string("no HDMI signal: ")+std::strerror(errno));
+    check(-1,msg);
+  }
+  if(!t.bt.width||!t.bt.height) throw NoSignal("no HDMI signal: empty timings");
+}
 double cadence(const v4l2_dv_timings& t) {
   uint64_t w=uint64_t(t.bt.width)+t.bt.hfrontporch+t.bt.hsync+t.bt.hbackporch;
   uint64_t h=uint64_t(t.bt.height)+t.bt.vfrontporch+t.bt.vsync+t.bt.vbackporch;
@@ -32,7 +40,7 @@ Capture::Capture(const std::string& device):fd_(open(device.c_str(),O_RDWR|O_NON
   query();
 }
 void Capture::query() {
-  check(ctl(fd_.get(),VIDIOC_QUERY_DV_TIMINGS,&timings_),"QUERY_DV_TIMINGS (no signal?)");
+  query_timings(fd_.get(),timings_,"QUERY_DV_TIMINGS");
   v4l2_format f{};f.type=V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
   check(ctl(fd_.get(),VIDIOC_G_FMT,&f),"G_FMT");format_=f.fmt.pix_mp;
   signal_fps=cadence(timings_);
@@ -120,7 +128,7 @@ Capture::Frame Capture::latest(std::chrono::milliseconds timeout) {
   return latest;
 }
 void Capture::unchanged() {
-  v4l2_dv_timings t{};check(ctl(fd_.get(),VIDIOC_QUERY_DV_TIMINGS,&t),"signal lost");
+  v4l2_dv_timings t{};query_timings(fd_.get(),t,"signal lost");
   v4l2_format f{};f.type=V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;check(ctl(fd_.get(),VIDIOC_G_FMT,&f),"format changed");
   auto& a=format_;auto& b=f.fmt.pix_mp;
   if(t.type!=timings_.type||t.bt.interlaced||t.bt.width!=a.width||t.bt.height!=a.height||std::abs(cadence(t)-signal_fps)>0.15||

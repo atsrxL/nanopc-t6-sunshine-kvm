@@ -23,8 +23,13 @@ user name is fixed at `kvm`; the initial server default password is also `kvm`.
    with a GameStream document whose root `status_code` is 401. An authorized one reports
    `RKMoonAuth=password-http-v1`, `HttpsPort=0` and `PairStatus=1`; the client requires
    the scheme marker and the authorized state before going further.
-3. Select **View HDMI**. The fixed `HDMI` app is resolved over an authorized `applist`
-   request; there is no game library or application management UI. Every later request,
+   After connecting, the window shows what the server reports (host name, ID, HDMI state
+   and mode, mouse modes, codecs) and keeps it updated once per second. Nothing streams yet.
+3. Select **Start**. The fixed `HDMI` app is resolved over an authorized `applist`
+   request; there is no game library or application management UI. Start also works with
+   no HDMI signal: the server sends a black 1920×1080 picture while keyboard and mouse work,
+   so a sleeping target can be woken, and the session restarts in the real mode once a
+   signal appears (ADR-011). Every later request,
    including the streaming session's `launch`/`resume`/`cancel`, carries the same header
    to the same base port.
 4. Use **Forget host binding** to drop the stored host identity and resolved app.

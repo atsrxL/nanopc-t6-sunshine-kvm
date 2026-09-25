@@ -26,6 +26,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <SDL.h>
+#include <Limelight.h>
 #include <algorithm>
 
 namespace {
@@ -36,6 +37,12 @@ constexpr int POLL_FAILURE_LIMIT = 10;
 constexpr int RECONNECT_LIMIT = 5;
 constexpr int RECONNECT_MAX_DELAY_MS = 8000;
 constexpr int MODE_STABLE_POLLS = 2;
+// With no HDMI source the server streams hardware-encoded black (ADR-011) so the keyboard
+// and mouse can wake the target; the session restarts in the real mode once it appears.
+constexpr int PLACEHOLDER_WIDTH = 1920;
+constexpr int PLACEHOLDER_HEIGHT = 1080;
+constexpr int PLACEHOLDER_FPS = 60;
+bool canStart(const RkmoonDisplay& mode) { return mode.ready() || mode.status == QLatin1String("no_signal"); }
 
 // Filter the reserved local controls so they cannot become remote key events.
 // Ctrl+Alt+Shift+Q/X/Z remain upstream session quit/fullscreen/release shortcuts.
@@ -95,7 +102,7 @@ KvmWindow::KvmWindow() : m_host(m_config)
     });
     auto* row = new QHBoxLayout;
     m_connect = new QPushButton(tr("Bind / Connect"), this);
-    m_start = new QPushButton(tr("View HDMI"), this);
+    m_start = new QPushButton(tr("Start"), this);
     auto* options = new QPushButton(tr("Settings"), this);
     row->addWidget(m_connect);
     row->addWidget(m_start);
@@ -109,10 +116,21 @@ KvmWindow::KvmWindow() : m_host(m_config)
                                   tr("Forget the stored host identity and resolved HDMI app?"))
             != QMessageBox::Yes) return;
         stopFollowing();
+        m_poll.stop();
+        m_connected = false;
         m_host.forget();
         m_start->setEnabled(false);
+        updateInfo();
         updateStatus(tr("Host binding forgotten."));
     });
+    m_info = new QLabel(this);
+    m_info->setObjectName("serverInfo");
+    m_info->setWordWrap(true);
+    m_info->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_info->setFrameShape(QFrame::StyledPanel);
+    m_info->setMargin(6);
+    layout->addWidget(m_info);
+    updateInfo();
     m_status = new QLabel(tr("Not connected"), this);
     m_status->setWordWrap(true);
     layout->addWidget(m_status);
@@ -144,9 +162,11 @@ void KvmWindow::closeEvent(QCloseEvent* event)
     // Never let QApplication terminate while a connection attempt or upstream
     // deferred session cleanup still references this window and host.
     if (m_connecting || m_streaming || m_pollBusy) event->ignore();
-    else { stopFollowing(); QWidget::closeEvent(event); }
+    else { stopFollowing(); m_poll.stop(); QWidget::closeEvent(event); }
 }
 
+// Stops any wish to stream (waiting, reconnecting, restarting) and the poll timer;
+// callers that stay connected resume info polling with resumeInfoPolling().
 void KvmWindow::stopFollowing()
 {
     m_wantStream = false;
@@ -158,10 +178,45 @@ void KvmWindow::stopFollowing()
     m_pendingModePolls = 0;
 }
 
+void KvmWindow::resumeInfoPolling()
+{
+    if (m_connected && !m_poll.isActive()) m_poll.start();
+}
+
+void KvmWindow::updateInfo()
+{
+    if (!m_connected || !m_host.computer()) {
+        m_info->setText(tr("No server information. Enter the host address and click Bind / Connect."));
+        return;
+    }
+    auto* host = m_host.computer();
+    const auto& mode = m_host.display;
+    QString hdmi;
+    if (mode.ready()) hdmi = tr("%1 × %2 @ %3 Hz").arg(mode.width).arg(mode.height).arg(mode.fpsX100 / 100.0, 0, 'f', 2);
+    else if (mode.status == QLatin1String("no_signal"))
+        hdmi = tr("no signal (Start opens a black screen; keyboard/mouse can wake the target)");
+    else if (mode.status == QLatin1String("unsupported")) hdmi = tr("source mode not supported by the capture");
+    else hdmi = tr("capture device unavailable");
+    QStringList mice;
+    if (m_host.supportsAbsoluteMouse) mice << tr("absolute");
+    if (m_host.supportsRelativeMouse) mice << tr("relative");
+    QStringList codecs;
+    if (host->serverCodecModeSupport & SCM_H264) codecs << QStringLiteral("H.264");
+    if (host->serverCodecModeSupport & SCM_HEVC) codecs << QStringLiteral("HEVC");
+    QString text = tr("Host: %1\nID: %2\nAddress: %3:%4\nHDMI: %5\nMouse modes: %6\nCodecs: %7")
+        .arg(host->name, host->uuid, m_config.address).arg(m_config.httpPort)
+        .arg(hdmi, mice.isEmpty() ? tr("none") : mice.join(", "), codecs.isEmpty() ? tr("unknown") : codecs.join(", "));
+    if (m_unreachable) text += tr("\n(Host not answering; retrying — values above may be stale)");
+    m_info->setText(text);
+}
+
 void KvmWindow::connectHost()
 {
     if (m_streaming || m_connecting || m_pollBusy) return;
     stopFollowing();
+    m_poll.stop();
+    m_connected = false;
+    m_unreachable = false;
     if (m_config.address != m_address->text().trimmed() || m_config.httpPort != m_port->value()) m_host.forget();
     m_config.address = m_address->text().trimmed();
     m_config.httpPort = static_cast<quint16>(m_port->value());
@@ -170,6 +225,8 @@ void KvmWindow::connectHost()
     m_connecting = true;
     updateMouseModeEnabled();
     m_start->setEnabled(false);
+    updateInfo();
+    updateStatus(tr("Connecting…"));
     m_host.refreshAsync([this](QString error) {
         if (!error.isEmpty()) {
             m_connecting = false;
@@ -179,10 +236,15 @@ void KvmWindow::connectHost()
         m_host.refreshAsync([this](QString appError) {
             m_connecting = false;
             if (!appError.isEmpty()) { updateStatus(appError); return; }
+            // Connected: show what the server reports and keep it current. Streaming
+            // starts only when the user clicks Start.
+            m_connected = true;
+            m_pollFailures = 0;
             m_start->setEnabled(true);
-            m_wantStream = true;
+            m_start->setText(tr("Start"));
+            updateInfo();
+            updateStatus(tr("Connected. Click Start to open the remote screen."));
             m_poll.start();
-            pollDisplay();
         }, true);
     });
 }
@@ -210,18 +272,29 @@ void KvmWindow::pollDisplay()
                 updateStatus(tr("Display status temporarily unavailable; retrying (%1/%2)").arg(m_pollFailures).arg(POLL_FAILURE_LIMIT));
                 return;
             }
+            if (m_host.transientFailure && !m_wantStream && !m_streaming) {
+                // Idle info view: keep the last values and keep asking.
+                m_unreachable = true;
+                updateInfo();
+                return;
+            }
             m_sessionError = error;
             stopFollowing();
+            m_poll.stop();
+            m_connected = false;
             updateStatus(error);
             m_start->setEnabled(false);
+            updateInfo();
             if (m_streaming) { RkmoonSessionControl::stop(); }
             return;
         }
         m_pollFailures = 0;
+        m_unreachable = false;
+        updateInfo();
         const auto mode = m_host.display;
-        m_start->setText(m_wantStream && !m_streaming ? tr("Cancel / Stop waiting") : tr("View HDMI"));
-        if (m_sessionError.isEmpty() && (m_reconnectAttempt == 0 || !mode.ready())) updateStatus(mode.ready() ? tr("HDMI %1 × %2 @ %3 Hz").arg(mode.width).arg(mode.height).arg(mode.fpsX100 / 100.0)
-                                 : tr("Waiting for HDMI: %1").arg(mode.status));
+        m_start->setText(m_wantStream && !m_streaming ? tr("Cancel") : tr("Start"));
+        if (m_wantStream && !m_streaming && m_sessionError.isEmpty() && !canStart(mode))
+            updateStatus(tr("Waiting for the capture: %1").arg(mode.status));
         if (RkmoonSessionControl::userQuit.load() && m_streaming) m_wantStream = false;
         if (m_streaming && m_wantStream && !m_cleanup && !m_restart) {
             if (mode == m_runningMode) { m_pendingModePolls = 0; return; }
@@ -237,7 +310,7 @@ void KvmWindow::pollDisplay()
             m_restart = true;
             RkmoonDiagnostics::record("display-change-restart");
             RkmoonSessionControl::stop();
-        } else if (!m_streaming && m_wantStream && !m_reconnectPending && mode.ready()) {
+        } else if (!m_streaming && m_wantStream && !m_reconnectPending && canStart(mode)) {
             QTimer::singleShot(0, this, &KvmWindow::runStream);
         }
     });
@@ -246,9 +319,16 @@ void KvmWindow::pollDisplay()
 void KvmWindow::startStream()
 {
     if (m_streaming || m_connecting || !m_start->isEnabled()) return;
-    if (m_wantStream) { stopFollowing(); updateStatus(tr("Automatic connection cancelled")); return; }
+    if (m_wantStream) {
+        stopFollowing(); resumeInfoPolling();
+        m_start->setText(tr("Start"));
+        updateStatus(tr("Cancelled"));
+        return;
+    }
     stopFollowing();
     m_wantStream = true;
+    m_start->setText(tr("Cancel"));
+    updateStatus(tr("Starting…"));
     m_poll.start();
     pollDisplay();
 }
@@ -275,7 +355,9 @@ void KvmWindow::sessionEnded()
         m_reconnectTimer.stop();
         m_reconnectPending = false;
         m_reconnectAttempt = 0;
-        if (m_status->text() == tr("HDMI stream connected")) updateStatus(tr("Stream ended; reconnect to resume."));
+        resumeInfoPolling();
+        m_start->setText(tr("Start"));
+        if (m_status->text() == tr("HDMI stream connected")) updateStatus(tr("Stream ended; click Start to resume."));
         return;
     }
     if (restart) return; // Confirmed source mode change: the next ready poll relaunches.
@@ -283,8 +365,9 @@ void KvmWindow::sessionEnded()
         // First launch never connected: report the launch failure, do not loop.
         RkmoonDiagnostics::record("launch-ended-before-connect");
         stopFollowing();
-        m_start->setText(tr("View HDMI"));
-        if (m_sessionError.isEmpty()) updateStatus(tr("Stream ended; click View HDMI to retry."));
+        resumeInfoPolling();
+        m_start->setText(tr("Start"));
+        if (m_sessionError.isEmpty()) updateStatus(tr("Stream ended; click Start to retry."));
         return;
     }
     scheduleReconnect();
@@ -300,7 +383,8 @@ void KvmWindow::launchFailed(const QString& status, bool transport)
     // HTTP/protocol refusal (including authentication) stops following.
     if (transport && m_wantStream && m_reconnectAttempt > 0) { scheduleReconnect(); return; }
     stopFollowing();
-    m_start->setText(tr("View HDMI"));
+    resumeInfoPolling();
+    m_start->setText(tr("Start"));
     updateStatus(status);
 }
 
@@ -310,8 +394,9 @@ void KvmWindow::scheduleReconnect()
         RkmoonDiagnostics::record(QString("reconnect-exhausted attempts=%1").arg(m_reconnectAttempt));
         const QString detail = m_sessionError;
         stopFollowing();
-        m_start->setText(tr("View HDMI"));
-        updateStatus(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u81ea\u52a8\u91cd\u8fde %1 \u6b21\u672a\u6210\u529f\uff1b\u8bf7\u70b9\u51fb View HDMI \u91cd\u8bd5\u3002").arg(RECONNECT_LIMIT)
+        resumeInfoPolling();
+        m_start->setText(tr("Start"));
+        updateStatus(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u81ea\u52a8\u91cd\u8fde %1 \u6b21\u672a\u6210\u529f\uff1b\u8bf7\u70b9\u51fb Start \u91cd\u8bd5\u3002").arg(RECONNECT_LIMIT)
                      + (detail.isEmpty() ? QString() : QStringLiteral("\n") + detail));
         return;
     }
@@ -321,7 +406,7 @@ void KvmWindow::scheduleReconnect()
     m_reconnectPending = true;
     m_reconnectTimer.start(delay);
     if (!m_poll.isActive()) m_poll.start();
-    m_start->setText(tr("Cancel / Stop waiting"));
+    m_start->setText(tr("Cancel"));
     m_start->setEnabled(true);
     updateStatus(QString::fromUtf16(u"\u8fde\u63a5\u4e2d\u65ad\uff0c\u6b63\u5728\u91cd\u8fde\uff08%1/%2\uff09").arg(m_reconnectAttempt).arg(RECONNECT_LIMIT)
                  + (m_sessionError.isEmpty() ? QString() : QStringLiteral("\n") + m_sessionError));
@@ -337,21 +422,30 @@ void KvmWindow::reconnectNow()
 
 void KvmWindow::runStream()
 {
-    if (m_streaming || m_connecting || !m_wantStream || !m_host.display.ready()) return;
+    if (m_streaming || m_connecting || !m_wantStream || !canStart(m_host.display)) return;
     try {
         // Refresh server state and validate pinned identity before every launch.
         const bool absolute = m_config.mouseMode == KvmConfig::MOUSE_ABSOLUTE;
         if ((absolute && !m_host.supportsAbsoluteMouse) || (!absolute && !m_host.supportsRelativeMouse)) {
             stopFollowing();
+            resumeInfoPolling();
+            m_start->setText(tr("Start"));
             updateStatus(tr("Server does not advertise the selected mouse mode; upgrade/configure its input support or choose a supported mode."));
             return;
         }
         RkmoonAuth::setMouseMode(absolute);
         NvApp app = m_host.selectedApp;
         m_runningMode = m_host.display;
-        m_config.width = m_runningMode.width;
-        m_config.height = m_runningMode.height;
-        m_config.fps = (m_runningMode.fpsX100 + 50) / 100;
+        if (m_runningMode.ready()) {
+            m_config.width = m_runningMode.width;
+            m_config.height = m_runningMode.height;
+            m_config.fps = (m_runningMode.fpsX100 + 50) / 100;
+        } else {
+            // No source: the server sends black at this size until a signal appears.
+            m_config.width = PLACEHOLDER_WIDTH;
+            m_config.height = PLACEHOLDER_HEIGHT;
+            m_config.fps = PLACEHOLDER_FPS;
+        }
         m_restart = false;
         m_sessionConnected = false;
         m_sessionError.clear();

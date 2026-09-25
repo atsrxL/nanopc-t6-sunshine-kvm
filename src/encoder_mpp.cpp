@@ -148,7 +148,8 @@ Message Encoder::encode(const Capture::Frame& raw,Capture::Buffer* capture,bool 
         }
         catch(...){if(sync){fence.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_READ;ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence);}throw;}
         if(sync){fence.flags=DMA_BUF_SYNC_END|DMA_BUF_SYNC_READ;if(ioctl(capture->dma.get(),DMA_BUF_IOCTL_SYNC,&fence)<0)throw std::runtime_error("capture DMA CPU sync end failed");}
-      } else { // Hardware encoder capability probe ONLY; never substituted into a live HDMI stream.
+      } else { // Synthetic black: capability probe, or the explicit no-signal placeholder (ADR-011).
+        // Never substituted for a present HDMI source; the worker switches back as soon as capture opens.
         std::memset(dst,p.source.full_range?0:16,size_t(p.hs)*p.vs);std::memset(dst+size_t(p.hs)*p.vs,128,size_t(p.hs)*p.vs/2);
       }
     }catch(...){mpp_buffer_sync_end(input);throw;}

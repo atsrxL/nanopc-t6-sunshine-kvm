@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "rkmoon/encoder.hpp"
+#include <algorithm>
 #include <charconv>
 #include <csignal>
 #include <fcntl.h>
@@ -19,11 +20,12 @@ int main(int argc,char** argv){
   using namespace rkmoon;using namespace std::chrono_literals;
   signal(SIGTERM,stop);signal(SIGINT,stop);signal(SIGPIPE,SIG_IGN);
   Config c;std::string device="/dev/video0",output,stats;uint32_t seconds=60,idr_at=30;int ipc=-1;
-  bool probe=false,allow_copy=false,authorized=false;
+  bool probe=false,allow_copy=false,authorized=false,placeholder=false;
   try {
     for(int i=1;i<argc;++i){std::string k=argv[i];
       if(k=="--help"){std::cout<<"rkmoon-worker --device /dev/videoN --codec hevc|h264 --width 1920 --height 1080 --fps-x100 6000 --bitrate 20000000 --gop 60 --seconds 60 --output NEW_FILE --stats NEW_CSV --ack-capture-ownership [--allow-copy]\nEven 64..3840 x 64..2160, 1..120.10fps; throughput capped at 3840x2160x60.10. Legacy --allow-1440p90-experiment accepted.\nHardware-only capability probe: --probe (no HDMI capture; emits synthetic black into MPP)\nInternal: --ipc-fd FD; one AU per ACK, K/bitrate/stop control messages\n";return 0;}
       if(k=="--probe"){probe=true;continue;}if(k=="--allow-copy"){allow_copy=true;continue;}if(k=="--ack-capture-ownership"){authorized=true;continue;}
+      if(k=="--no-signal-placeholder"){placeholder=true;continue;}
       if(k=="--allow-1440p90-experiment"){c.allow_1440p90_experiment=true;continue;}
       if(++i>=argc)throw std::runtime_error("missing option value");
       std::string v=argv[i];
@@ -48,6 +50,51 @@ int main(int argc,char** argv){
       return caps&1?0:1;
     }
     if(!authorized)throw std::runtime_error("capture ownership not authorized; no device opened");
+    // Shared by the placeholder and capture loops: one AU in flight, controls honored while waiting.
+    auto await_ack=[&](uint64_t seq,bool& force,const std::function<void(uint32_t)>& bitrate)->bool{
+      auto deadline=now_us()+2000000;
+      while(!stopping){
+        auto now=now_us();if(now>=deadline)throw std::runtime_error("AU credit timeout");
+        auto ctl=receive(ipc,std::chrono::milliseconds((deadline-now+999)/1000));
+        switch(ctl.h.kind){
+          case Kind::ack:if(ctl.h.seq!=seq)throw std::runtime_error("ACK sequence mismatch");return true;
+          case Kind::idr:force=true;break;
+          case Kind::bitrate:bitrate(ctl.h.extra);break;
+          case Kind::stop:return false;
+          default:throw std::runtime_error("unexpected worker control");
+        }
+      }
+      return false;
+    };
+    if(placeholder){
+      // ADR-011: no HDMI source. The session still opens so keyboard/mouse can wake the target.
+      // The HDMI device is never opened; MPP hardware-encodes synthetic black at a low cadence.
+      // The client restarts the session in the real mode as soon as the server reports a signal.
+      if(ipc<0)throw std::runtime_error("placeholder mode is session-only");
+      Layout l{c.width,c.height,c.width,c.width*c.height*3/2,Pixels::nv12,false};
+      Encoder enc;enc.open(c,l,nullptr,true);
+      Message m;m.h.kind=Kind::ready;m.h.width=c.width;m.h.height=c.height;m.h.codec=c.codec;m.h.extra=c.fps_x100;send(ipc,m,2s);
+      std::cerr<<"{\"kind\":\"placeholder\",\"reason\":\"no HDMI signal\"}\n";
+      constexpr uint64_t period_us=100000; // 10 black frames/s keep the stream and input alive.
+      bool force=true;auto next=now_us();
+      auto bitrate=[&](uint32_t bps){enc.bitrate(bps);force=true;};
+      while(!stopping){
+        for(auto now=now_us();now<next&&!stopping;now=now_us()){
+          if(!readable(ipc,std::chrono::milliseconds((next-now+999)/1000)))continue;
+          auto ctl=receive(ipc,100ms);
+          if(ctl.h.kind==Kind::stop)return 0;
+          if(ctl.h.kind==Kind::idr)force=true;
+          else if(ctl.h.kind==Kind::bitrate)bitrate(ctl.h.extra);
+          else throw std::runtime_error("unexpected control before frame");
+        }
+        next=std::max(next+period_us,now_us());
+        Capture::Frame black{};black.dequeue_us=now_us();
+        auto frame=enc.encode(black,nullptr,force);force=false;
+        send(ipc,frame,300ms);
+        if(!await_ack(frame.h.seq,force,bitrate))return 0;
+      }
+      return 0;
+    }
     if(ipc<0&&output.empty())throw std::runtime_error("standalone mode requires --output");
     Fd file;if(!output.empty()){file.reset(open(output.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600));if(file.get()<0)throw std::runtime_error("output already exists or cannot be created");}
     Fd statfd;if(!stats.empty()){statfd.reset(open(stats.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC,0600));if(statfd.get()<0)throw std::runtime_error("stats already exist/cannot create");}
@@ -114,18 +161,7 @@ int main(int argc,char** argv){
       auto& h=frame.h;emit(std::to_string(h.seq)+","+std::to_string(raw.sequence)+","+std::to_string(raw.driver_us)+","+std::to_string(raw.flags&V4L2_BUF_FLAG_TIMESTAMP_MASK)+","+std::to_string(h.dequeue_us)+","+std::to_string(h.submit_us)+","+std::to_string(h.done_us)+","+std::to_string(h.size)+","+std::to_string(bool(h.flags&flag_idr))+","+std::to_string(cap.raw_skipped)+","+std::to_string(enc.direct())+"\n");
       if(ipc>=0){
         send(ipc,frame,300ms);
-        auto deadline=now_us()+2000000;bool ack=false;
-        while(!ack&&!stopping){
-          auto now=now_us();if(now>=deadline)throw std::runtime_error("AU credit timeout");
-          auto ctl=receive(ipc,std::chrono::milliseconds((deadline-now+999)/1000));
-          switch(ctl.h.kind){
-            case Kind::ack:if(ctl.h.seq!=h.seq)throw std::runtime_error("ACK sequence mismatch");ack=true;break;
-            case Kind::idr:force=true;break;
-            case Kind::bitrate:set_bitrate(ctl.h.extra);break;
-            case Kind::stop:return 0;
-            default:throw std::runtime_error("unexpected worker control");
-          }
-        }
+        if(!await_ack(h.seq,force,set_bitrate))return 0;
       }
       if(now_us()-last_check>=1000000){
         try{cap.unchanged();}

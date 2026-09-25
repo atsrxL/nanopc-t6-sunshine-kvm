@@ -37,11 +37,12 @@ rkmoon::Config translate(const video::config_t& c){
   out.allow_1440p90_experiment=yes("RKMOON_ALLOW_1440P90_EXPERIMENT")&&yes("RKMOON_ALLOW_HIGH_RES");
   out.validate();return out;
 }
-std::vector<std::string> args(const rkmoon::Config& c){
+std::vector<std::string> args(const rkmoon::Config& c,bool placeholder){
   std::vector<std::string> a{"--device",env("RKMOON_VIDEO_DEVICE","/dev/video0"),"--codec",c.codec==rkmoon::Codec::hevc?"hevc":"h264",
     "--width",std::to_string(c.width),"--height",std::to_string(c.height),"--fps-x100",std::to_string(c.fps_x100),"--bitrate",std::to_string(c.bitrate),"--gop",std::to_string(std::clamp((c.fps_x100+50)/100,1U,120U)),"--ack-capture-ownership"};
   if(c.allow_1440p90_experiment&&c.fps_x100>=8900) a.push_back("--allow-1440p90-experiment");
   if(yes("RKMOON_ALLOW_COPY")) a.push_back("--allow-copy");
+  if(placeholder) a.push_back("--no-signal-placeholder");
   return a;
 }
 void release_input(){std::shared_ptr<rkmoon::HidClient> old;{std::lock_guard lock(input_mutex);old=std::move(input);}old.reset();}
@@ -92,7 +93,11 @@ void capture(safe::mail_t mail,video::config_t config,void* channel_data){
   try {
     if(!yes("RKMOON_CAPTURE_AUTHORIZED"))throw std::runtime_error("capture ownership has not been granted");
     auto c=translate(config);
-    rkmoon::Child worker(env("RKMOON_WORKER"),args(c));
+    // ADR-011: with no HDMI source the session still opens (hardware-encoded black) so the
+    // keyboard/mouse can wake the target. The client restarts in the real mode once it appears.
+    const bool placeholder=std::string(current_display().status)=="no_signal";
+    if(placeholder)BOOST_LOG(info)<<"RKMoon no HDMI signal: starting input session with black placeholder video";
+    rkmoon::Child worker(env("RKMOON_WORKER"),args(c,placeholder));
     auto ready=rkmoon::receive(worker.fd(),3000ms);
     if(ready.h.kind!=rkmoon::Kind::ready||ready.h.width!=c.width||ready.h.height!=c.height||ready.h.codec!=c.codec||ready.h.extra!=c.fps_x100)throw std::runtime_error("capture negotiation failed");
     // HDMI is the entire input viewport. No T6 desktop layout or logical scaling.

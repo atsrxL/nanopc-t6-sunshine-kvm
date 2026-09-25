@@ -400,3 +400,44 @@ Old .RKMoon-previous-4efcef… (the 176733ef release) removed. .RKMoon-previous-
 still has 20 files "Resource busy" (old client running on user PC); left in place.
 VM9006 stopped, lease cleared, verified delivery recorded; cleanup deadline
 2026-09-25 15:53:30 CST.
+
+## Start button / no-signal session — Windows delivery d4fdd3de99d7 (2026-09-25)
+
+Client change (kvmwindow.cpp/.h, tests/client_ui.cpp; uncommitted in the shared repo):
+Connect only authenticates and shows continuously refreshed server info, no longer
+auto-streams; the former "View HDMI" button is now "Start"; Start stays enabled with no
+HDMI signal and then requests 1920x1080@60. Client sources were not edited by the build.
+
+Build clone: VM9003 codex-win-rkmoon-202609252045, project rkkvm-sunmoon-client, from
+VM200 snapshot env-admin-ssh. Full and PVE linked clone both refused the EFI snapshot;
+the standing-authorized manual ZFS linked path was used (disk-0/1/2 origins
+vm-200-disk-N@env-admin-ssh verified). QGA ready; Administrator SSH host key
+SHA256:Ai4UDg… matched and was used for file transfer/build. Qt 6.8.3 msvc2022_64 was
+installed clone-locally by aqtinstall under D:/Build/work/rkmoon-9003/Qt; VS2022 wrapper.
+Build snapshot d4fdd3de99d7bfc6092497ebfde210de7f1ed8e0 exists only inside VM9003
+(working-tree kvmwindow.cpp f587988b…, kvmwindow.h 5680892c…, client_ui.cpp 6782ca82…,
+identical to the Mac working tree); no shared-repo commit.
+
+Results — OFFLINE/SYNTHETIC ONLY:
+- Windows: fetch pinned sources + overlay apply + test_client.py passed; Release link OK
+  (common-c Connection.c compiled); QtTest 26/26 (incl.
+  connectShowsInfoWithoutStreamingAndStartAcceptsNoSignal), cold SDL 3/3, audio_gain
+  assertions, packaged clean-PATH 4 s startup smoke passed.
+- Mac (reported by the requester, not rerun here): Qt 26/26, test_client.py 4/4.
+- NOT verified: real Connect/serverinfo refresh against the T6, real Start with and
+  without HDMI signal, actual 1920x1080@60 no-signal session, playback/input.
+
+Delivery: smb://192.168.123.10/zssd/Target/RKMoon-Windows-x64, 41 files (40 package
+files + delivery-manifest.json), 69,694,807 bytes (package payload 69,689,124).
+delivery-manifest.json SHA256 71e1d9b35cb654183c2629fb7179f7c86b8f038e4e3132c8baebadf2215df98d;
+rkmoon-client.exe 615,424 bytes SHA256 175d0728dee3432cc9b7f18584ef8dff60a5d4ace51a4d1993cc58885e2ccb4c;
+internal ZIP 68ddd66a… (not left in Target); overlay d642c3ad… (pinned, CRLF form).
+Every file size/SHA256 read back from SMB staging, the final folder, and again
+independently from the Mac; no extra files.
+Old folder moved to .RKMoon-previous-d4fdd3de99d7… (it holds the prior 4efcef release);
+16 files removed, 22 files incl. rkmoon-client.exe/Qt/SDL DLLs still "Resource busy"
+over SMB (old client presumably still running on the user PC); left in place, user PC
+not touched. The earlier .RKMoon-previous-176733ef… is no longer present.
+VM9003 stopped, lease cleared, attempt recorded success/verified; guest intentionally
+not cleaned (same-project reuse only). Guarded cleanup timer
+codex-win-clone-9003-cleanup.timer deadline 2026-09-26 21:07:25 CST.

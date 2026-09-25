@@ -32,6 +32,8 @@ private:
     void markConnected();
     void launchFailed(const QString& status, bool transport);
     void stopFollowing();
+    void resumeInfoPolling();
+    void updateInfo();
     void updateMouseModeEnabled();
     void updateStatus(const QString& status);
 
@@ -44,6 +46,7 @@ private:
     QPushButton* m_connect;
     QPushButton* m_start;
     QLabel* m_status;
+    QLabel* m_info;
     QTimer m_poll;
     QTimer m_reconnectTimer;
     bool m_wantStream = false;
@@ -60,4 +63,6 @@ private:
     RkmoonDisplay m_runningMode;
     bool m_streaming = false;
     bool m_connecting = false;
+    bool m_connected = false; // Password accepted; server info is polled until an error or forget.
+    bool m_unreachable = false;
 };
